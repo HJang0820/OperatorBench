@@ -1,0 +1,26 @@
+# Python temporary files
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Generated data, experiment outputs, and temporary files
+/data/
+/outputs/
+/tmp/
+
+# Large datasets and model checkpoints
+*.npy
+*.npz
+*.h5
+*.hdf5
+*.mat
+*.pt
+*.pth
+*.ckpt
