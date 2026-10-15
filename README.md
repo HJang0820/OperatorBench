@@ -1,95 +1,180 @@
 # OperatorBench
 
-DeepONet과 Fourier Neural Operator(FNO)를 비교하기 위한
-PDE operator-learning benchmark 프로젝트
+OperatorBench is a research project for reproducible comparisons of
+DeepONet and Fourier Neural Operator (FNO) on PDE operator-learning tasks.
 
-먼저 2D Darcy 문제를 대상으로 데이터 생성, 전처리,
-모델 학습 및 평가 과정을 구성하고, 이후 Burgers 문제까지 커버
+The immediate focus is a complete 2D Darcy workflow:
+data generation, storage, preprocessing, model training, and evaluation.
+Burgers experiments are planned as a subsequent extension.
 
-## 현재 상태
+## Current status
 
-기존 Jupyter 노트북에서 2D Darcy 문제에 대한 DeepONet과 FNO의
-예비 실험을 수행했습니다.
+Preliminary Darcy experiments were conducted in Jupyter notebooks.
+The existing implementation is being migrated into reusable Python modules.
 
-현재는 기존 코드를 이 저장소로 이전하고,
-각 기능을 재사용 가능한 Python 모듈로 분리하기 위한 초기 단계입니다.
-아래 디렉터리 구조와 공통 평가 절차는 구현 계획이며,
-아직 모두 구현된 상태는 아닙니다.
+The coefficient generator, finite-difference solver, and diagnostic
+plotting script have been extracted and passed basic smoke checks.
+The complete modular training and evaluation pipeline is not yet available.
 
-## 첫 번째 대상 문제: 2D Darcy
+## Darcy problem
 
-- 영역: 단위 정사각형
-- 방정식: -div(a grad u) = 1
-- 압력 경계조건: 전체 경계에서 u = 0
-- 입력: a(x)
-- 출력: u(x)
-- 기존 계수장 생성: Neumann cosine basis 기반 GRF를 3/12로 이진화
-- 기존 기준해 계산: 85×85 격자에서 flux-form 5-point FDM
-- 비교 모델: DeepONet, FNO
+We consider the steady elliptic problem
 
-기존 자체 생성 데이터와 공개 FNO 데이터의 완전한 동일성은
-검증하지 않았습니다.
+$$
+-\nabla \cdot (a(x)\nabla u(x)) = f(x),
+\qquad x \in (0,1)^2,
+$$
 
-향후 기준해 계산 격자와 모델의 관측 격자를 분리하고,
-421×421 기준해 생성 및 격자 세분화 검증을 진행할 계획입니다.
+with homogeneous Dirichlet boundary conditions:
 
-## 모듈화 설계
+$$
+u(x) = 0, \qquad x \in \partial\Omega.
+$$
 
-아래는 목표 구조입니다. 필요한 모듈부터 순차적으로 구현합니다.
+Here, `a` is the positive coefficient field, `f` is the source term,
+and `u` is the solution field.
+
+### Current diagnostic configuration
+
+- Model input for the initial task: coefficient field `a`.
+- Source term: `f = 1`.
+- Coefficient values: `3` and `12`.
+- Coefficient generation: thresholding a random cosine-basis expansion.
+- The constant mode of the underlying random field is set to zero.
+- Grid: `85 x 85` nodes, including boundary nodes.
+- Boundary conditions: zero Dirichlet conditions on all four sides.
+- Solver: flux-form five-point finite differences.
+- Face coefficients: arithmetic averages of adjacent nodal coefficients.
+- Linear system: solved using SciPy's sparse direct solver.
+
+This is a locally generated baseline dataset configuration.
+Exact equivalence to the original public FNO dataset has not been established.
+
+### Planned input configurations
+
+| Task | Model input | Fixed information |
+| --- | --- | --- |
+| `a_to_u` | Coefficient field `a` | A prescribed source, initially `f = 1` |
+| `f_to_u` | Source field `f` | One prescribed coefficient field shared across samples |
+| `af_to_u` | Coefficient and source fields `(a, f)` | Domain and boundary conditions |
+
+The current diagnostic demonstrates the constant-source configuration.
+Spatially varying source fields and the additional learning tasks are planned.
+
+### Planned coefficient distributions
+
+- Binary, discontinuous coefficients: current implementation.
+- Positive lognormal coefficients with configurable spatial regularity: planned.
+
+For lognormal coefficients, spatial regularity will be controlled by
+the underlying Gaussian field. Exponentiation alone does not specify smoothness.
+
+## Run the current Darcy diagnostic
+
+Run the following commands from the repository root in your Python environment.
+
+Install the diagnostic dependencies:
+
+```bash
+python -m pip install numpy scipy matplotlib
+```
+
+Run the checks and generate the figure:
+
+```bash
+python -m scripts.check_darcy
+```
+
+The script generates one coefficient field, computes its finite-difference
+solution, checks basic properties, evaluates the discrete residual,
+and saves a diagnostic figure.
+
+Successful execution includes:
+
+```text
+Basic solver checks passed.
+```
+
+The figure is saved to:
+
+```text
+docs/figures/darcy_sample_N85_seed2022.png
+```
+
+### Example coefficient and finite-difference solution
+
+![Binary Darcy coefficient and finite-difference solution](docs/figures/darcy_sample_N85_seed2022.png)
+
+This figure shows a numerical solution, not a neural-network prediction.
+A small discrete residual checks consistency with the discrete equations;
+it does not establish continuum accuracy or grid convergence.
+
+## Modular design
+
+The tree below includes both existing components and planned modules.
+Files marked "planned" are not yet available.
 
 ```text
 OperatorBench/
-├── configs/                    # 데이터·모델·학습 설정
 ├── operatorbench/
+│   ├── __init__.py
 │   ├── data_generation/
-│   │   ├── fields.py           # 계수장 생성
-│   │   └── darcy_fd.py         # Darcy 수치 solver
-│   ├── data/
-│   │   ├── datasets.py         # 저장 데이터 로딩
-│   │   └── preprocessing.py    # 정규화·해상도 변환
-│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── fields.py             # Coefficient generation
+│   │   ├── darcy_fd.py           # Darcy finite-difference solver
+│   │   ├── forcing.py            # Planned: source generation
+│   │   └── darcy_tasks.py        # Planned: task configuration
+│   ├── data/                    # Planned
+│   │   ├── datasets.py
+│   │   └── preprocessing.py
+│   ├── models/                  # Planned notebook migration
 │   │   ├── deeponet.py
 │   │   └── fno.py
-│   ├── training.py             # 학습·validation·checkpoint
-│   └── evaluation.py           # 평가 지표·예측 결과 저장
-├── scripts/                    # 데이터 생성·학습·평가 실행
-├── notebooks/                  # 설명·실험 확인·시각화
-├── docs/                       # 문헌조사·실험 기록·결과 그림
-└── tests/                      # 수치해법·입출력·모듈 검증
+│   ├── training.py              # Planned
+│   └── evaluation.py            # Planned
+├── scripts/
+│   ├── __init__.py
+│   └── check_darcy.py
+├── docs/
+│   └── figures/
+│       └── darcy_sample_N85_seed2022.png
+├── configs/                     # Planned
+├── tests/                       # Planned
+└── notebooks/                   # Planned
 ```
 
-## 설계 원칙
+### Design principles
 
-1. 데이터 생성과 모델 학습을 분리합니다.
-   학습할 때마다 PDE를 다시 풀지 않고 저장된 데이터를 불러옵니다.
+1. Separate numerical data generation from model training.
+2. Preserve `a`, `f`, `u`, coordinates, boundary conditions, and generation metadata.
+   Fixed fields may be stored as shared metadata rather than duplicated arrays.
+3. Select the model inputs through task configuration.
+4. Give DeepONet and FNO the same physical input information and data splits.
+5. Fit normalization statistics using training data only.
+6. Select checkpoints using validation data and reserve test data for final evaluation.
+7. Separate code migration from changes to numerical methods and model architectures.
+8. Record dependency versions, random seeds, configurations, and evaluation rules.
 
-2. 원래 계수장, 해, 좌표와 생성 설정을 보존합니다.
-   모델별 입력 형태로의 변환은 로딩 이후에 수행합니다.
+## Darcy roadmap
 
-3. 두 모델에 같은 데이터 분할과 물리적 입력 정보를 제공합니다.
-   정규화 통계는 training data에서만 계산합니다.
+- [x] Extract the binary coefficient generator.
+- [x] Extract the constant-source Darcy solver.
+- [x] Add basic checks and a diagnostic figure.
+- [ ] Verify numerical equivalence between notebook and modular implementations.
+- [ ] Support spatially varying source fields in the solver.
+- [ ] Add configurable coefficient and source generators.
+- [ ] Define and implement the common dataset format.
+- [ ] Add data loading and training-only normalization.
+- [ ] Migrate DeepONet and FNO.
+- [ ] Implement shared training, validation, and evaluation procedures.
+- [ ] Report relative L2 error and maximum absolute error.
+- [ ] Validate numerical accuracy using manufactured solutions and grid refinement.
+- [ ] Validate higher-resolution reference generation, including 421 x 421 grids.
+- [ ] Document reproducible Darcy baseline results.
 
-4. Validation으로 checkpoint를 선택하고,
-   test data는 최종 평가에 사용하도록 공통 절차를 구성합니다.
+Burgers support will follow the Darcy milestone.
 
-5. 기존 코드를 옮기는 작업과 수치해법·모델을 변경하는 작업을
-   분리하여 결과 차이를 추적합니다.
+## References
 
-## 구현 순서
-
-- [x] 기존 노트북과 실험 설정 정리
-- [ ] 계수장 생성 함수 분리
-- [ ] Darcy 수치 solver 분리
-- [ ] 모듈 분리 전후 결과 일치 확인
-- [ ] 데이터 저장·로딩·전처리 분리
-- [ ] DeepONet·FNO 모델 분리
-- [ ] 공통 학습·평가 절차 구성
-- [ ] 기준해 정확도 및 고해상도 데이터 생성 검증
-- [ ] Burgers 문제 추가
-
-## 참고
-
-- Fourier Neural Operator:
-  https://arxiv.org/abs/2010.08895
-- PDEBench:
-  https://github.com/pdebench/PDEBench
+- [Fourier Neural Operator](https://arxiv.org/abs/2010.08895)
+- [PDEBench](https://github.com/pdebench/PDEBench)
