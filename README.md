@@ -13,7 +13,16 @@ Preliminary Darcy experiments were conducted in Jupyter notebooks.
 The existing implementation is being migrated into reusable Python modules.
 
 The coefficient generator, finite-difference solver, and diagnostic
-plotting script have been extracted and passed basic smoke checks.
+plotting script have been extracted into reusable modules.
+
+The solver now accepts either a scalar source or an `(N, N)` source array
+on the same grid as the coefficient field. The original constant-source
+diagnostic continues to pass.
+
+A smooth, constant-coefficient manufactured-solution test has been added.
+Grid refinement on 17 x 17, 33 x 33, and 65 x 65 grids shows approximately
+second-order convergence.
+
 The complete modular training and evaluation pipeline is not yet available.
 
 ## Darcy problem
@@ -58,8 +67,11 @@ Exact equivalence to the original public FNO dataset has not been established.
 | `f_to_u` | Source field `f` | One prescribed coefficient field shared across samples |
 | `af_to_u` | Coefficient and source fields `(a, f)` | Domain and boundary conditions |
 
-The current diagnostic demonstrates the constant-source configuration.
-Spatially varying source fields and the additional learning tasks are planned.
+The binary-coefficient diagnostic uses the constant source `f = 1`.
+The numerical solver also supports spatially varying source arrays.
+
+Configurable source generators and the complete `f_to_u` and `af_to_u`
+learning pipelines remain planned.
 
 ### Planned coefficient distributions
 
@@ -109,6 +121,83 @@ This figure shows a numerical solution, not a neural-network prediction.
 A small discrete residual checks consistency with the discrete equations;
 it does not establish continuum accuracy or grid convergence.
 
+## Numerical verification
+
+### Source-array support and grid refinement
+
+Run the verification script from the repository root:
+
+```bash
+python -m scripts.check_darcy_source
+```
+
+The script first checks that a scalar source `f = 1` and an equivalent
+constant source array produce matching numerical solutions.
+
+It then solves a manufactured-solution problem on the unit square with
+homogeneous Dirichlet boundary conditions:
+
+$$
+a(x,y)=1,
+$$
+
+$$
+u_{\mathrm{exact}}(x,y)=\sin(\pi x)\sin(2\pi y),
+$$
+
+$$
+f(x,y)=5\pi^2\sin(\pi x)\sin(2\pi y).
+$$
+
+The same continuous problem is evaluated on each grid.
+Each grid contains `N x N` nodes, including boundary nodes, with
+spacing `h = 1 / (N - 1)`.
+
+The relative L2 error is computed from the sampled solution arrays:
+
+$$
+E_h =
+\frac{\|u_h-u_{\mathrm{exact}}\|_2}
+{\|u_{\mathrm{exact}}\|_2}.
+$$
+
+### Results
+
+| Grid size | Grid spacing | Relative L2 error | Observed order |
+| --- | --- | --- | --- |
+| 17 x 17 | 1/16 | 1.098931e-02 | — |
+| 33 x 33 | 1/32 | 2.734955e-03 | 2.0065 |
+| 65 x 65 | 1/64 | 6.829684e-04 | 2.0016 |
+
+The observed order compares each grid with the preceding coarser grid:
+
+$$
+p =
+\frac{\log(E_{\mathrm{coarse}}/E_{\mathrm{fine}})}
+{\log(h_{\mathrm{coarse}}/h_{\mathrm{fine}})}.
+$$
+
+The error decreases by approximately a factor of four when the grid
+spacing is halved. This is consistent with second-order convergence
+for this smooth, constant-coefficient problem.
+
+Successful execution ends with:
+
+```text
+Grid refinement checks passed.
+```
+
+### Scope and limitations
+
+These results concern finite-difference discretization error, not
+DeepONet or FNO prediction error.
+
+The test verifies source-array handling and grid convergence for the
+specified manufactured solution. It does not establish reference-solution
+accuracy for discontinuous coefficient fields or validate 421 x 421
+reference datasets. Those checks remain separate tasks.
+
+
 ## Modular design
 
 The tree below includes both existing components and planned modules.
@@ -134,7 +223,8 @@ OperatorBench/
 │   └── evaluation.py            # Planned
 ├── scripts/
 │   ├── __init__.py
-│   └── check_darcy.py
+│   ├── check_darcy.py
+│   └── check_darcy_source.py
 ├── docs/
 │   └── figures/
 │       └── darcy_sample_N85_seed2022.png
@@ -161,14 +251,15 @@ OperatorBench/
 - [x] Extract the constant-source Darcy solver.
 - [x] Add basic checks and a diagnostic figure.
 - [ ] Verify numerical equivalence between notebook and modular implementations.
-- [ ] Support spatially varying source fields in the solver.
+- [x] Support spatially varying source fields in the solver.
 - [ ] Add configurable coefficient and source generators.
 - [ ] Define and implement the common dataset format.
 - [ ] Add data loading and training-only normalization.
 - [ ] Migrate DeepONet and FNO.
 - [ ] Implement shared training, validation, and evaluation procedures.
 - [ ] Report relative L2 error and maximum absolute error.
-- [ ] Validate numerical accuracy using manufactured solutions and grid refinement.
+- [x] Verify approximately second-order convergence for a smooth, constant-coefficient manufactured solution.
+- [ ] Validate reference-solution accuracy for spatially varying and discontinuous coefficient fields.
 - [ ] Validate higher-resolution reference generation, including 421 x 421 grids.
 - [ ] Document reproducible Darcy baseline results.
 

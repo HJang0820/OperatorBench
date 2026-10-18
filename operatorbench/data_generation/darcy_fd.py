@@ -17,8 +17,31 @@ def solve_darcy_fd(a, f_value=1):
 
     # 2. 희소행렬 원소와 우변 준비
     rows, cols, vals = [], [], []
-    rhs = np.full(n_unknowns, f_value, dtype=np.float64)
+    # Accept either a scalar or a full-grid source array.
+    # rhs = np.full(n_unknowns, f_value, dtype=np.float64)
+    f_grid = np.asarray(f_value, dtype=np.float64)
 
+    if f_grid.ndim == 0:
+        # Example: 1.0 becomes an (N, N) array filled with ones.
+        f_grid = np.full(
+            a.shape, 
+            f_grid.item(),
+            dtype=np.float64,
+        )
+
+    elif f_grid.shape != a.shape:
+        raise ValueError(
+            f"f_value must be a scalar or have shape {a.shape}; "
+            f"received shape {f_grid.shape}."
+        )
+
+    if not np.isfinite(f_grid).all():
+        raise ValueError(
+            "f_value must contain only finite values."
+        )
+    # Use the source values at interior grid points.
+    rhs = f_grid[1:-1, 1:-1].reshape(-1, order="C").copy()
+    
     # 내부 격자의 (i, j)를 1차원 미지수 번호로 변환
     def idx(i, j):
         return (i - 1) * n_int + (j - 1)
