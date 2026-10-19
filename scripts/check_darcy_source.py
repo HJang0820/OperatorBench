@@ -1,7 +1,10 @@
 import numpy as np
 
 from operatorbench.data_generation.darcy_fd import solve_darcy_fd
-
+from operatorbench.data_generation.forcing import (
+    constant_source,
+    sine_source,
+)
 
 def main():
     # 1. Grid and coefficient field
@@ -11,7 +14,7 @@ def main():
     # 2. A scalar and an equivalent constant array must agree.
     u_scalar = solve_darcy_fd(a, f_value=1.0)
 
-    f_constant = np.ones_like(a)
+    f_constant = constant_source(N, value=1.0)
     u_constant_array = solve_darcy_fd(a, f_value=f_constant)
 
     np.testing.assert_allclose(
@@ -39,7 +42,19 @@ def main():
         a = np.ones((N, N), dtype=np.float64)
 
         u_exact = np.sin(np.pi * X) * np.sin(2.0 * np.pi * Y)
-        f_grid = 5.0 * np.pi**2 * u_exact
+
+        f_grid = sine_source(
+            N,
+            amplitude=5.0 * np.pi**2,
+        )
+
+        # Check that the generator reproduces the original source.
+        np.testing.assert_allclose(
+            f_grid,
+            5.0 * np.pi**2 * u_exact,
+            rtol=1e-12,
+            atol=1e-12,
+        )
 
         u_numeric = solve_darcy_fd(a, f_value=f_grid)
 

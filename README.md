@@ -23,6 +23,14 @@ A smooth, constant-coefficient manufactured-solution test has been added.
 Grid refinement on 17 x 17, 33 x 33, and 65 x 65 grids shows approximately
 second-order convergence.
 
+Constant and sine source generators are now implemented and checked.
+
+A small coefficient-to-solution (`a_to_u`) dataset can be generated using
+the migrated notebook workflow. The current smoke test generates
+10 samples on an 85 x 85 grid with a shared constant source `f = 1`,
+saves the fields and generation metadata, and verifies exact array
+equality after loading the saved file.
+
 The complete modular training and evaluation pipeline is not yet available.
 
 ## Darcy problem
@@ -70,7 +78,10 @@ Exact equivalence to the original public FNO dataset has not been established.
 The binary-coefficient diagnostic uses the constant source `f = 1`.
 The numerical solver also supports spatially varying source arrays.
 
-Configurable source generators and the complete `f_to_u` and `af_to_u`
+Constant and sine source generators are available.
+The current dataset builder applies one shared source field to all samples.
+
+Sample-varying source generation and the complete `f_to_u` and `af_to_u`
 learning pipelines remain planned.
 
 ### Planned coefficient distributions
@@ -198,6 +209,124 @@ accuracy for discontinuous coefficient fields or validate 421 x 421
 reference datasets. Those checks remain separate tasks.
 
 
+## Generate and check a small Darcy dataset
+
+Run the following commands from the repository root, using the
+dependencies listed above.
+
+### Check the source generators
+
+```bash
+python -m scripts.check_forcing
+```
+
+The implemented generators provide:
+
+- A constant source field.
+- A sine source field of the form
+  `amplitude * sin(pi*x) * sin(2*pi*y)`.
+
+### Generate, save, and reload 10 samples
+
+```bash
+python -m scripts.check_darcy_dataset
+```
+
+The current smoke-test configuration is:
+
+| Setting | Value |
+| --- | --- |
+| Task | `a_to_u` |
+| Number of samples | 10 |
+| Grid | 85 x 85 nodes, including boundary nodes |
+| Domain | Unit square |
+| Coefficient | Binary fields with values 3 and 12 |
+| Source | `f = 1`, shared across all samples |
+| Boundary condition | Homogeneous Dirichlet |
+| Seed | 2022 |
+| Numerical solver | Flux-form five-point finite differences |
+| Face averaging | Arithmetic |
+| Solver arithmetic | `float64` |
+| Stored field dtype | `float32` |
+
+The script saves the dataset to:
+
+```text
+data/smoke/darcy_binary_f1_N85_n10_seed2022.npz
+```
+
+The file contains:
+
+| Key | Shape or format | Meaning |
+| --- | --- | --- |
+| `A` | `(10, 85, 85)` | Coefficient fields |
+| `F` | `(10, 85, 85)` | Source fields |
+| `U` | `(10, 85, 85)` | Finite-difference solutions |
+| `x` | `(85,)` | x coordinates |
+| `y` | `(85,)` | y coordinates |
+| `metadata_json` | JSON string | Task, grid, seed, source, coefficient, and solver settings |
+
+Array indexing follows `A[sample, i, j] = a_sample(x[i], y[j])`.
+The same convention applies to `F` and `U`. Coordinate arrays use `float64`.
+
+The script checks field shapes, dtypes, finite values, coefficient values,
+source values, and zero boundary values. It also compares the first
+sample against a scalar-source solver call.
+
+After saving, every array and the generation metadata are loaded and
+compared with their in-memory counterparts.
+
+Successful execution ends with:
+
+```text
+Dataset generation and save/load checks passed.
+```
+
+If the output file already exists, the script does not overwrite it.
+Instead, it compares the existing file against the newly generated data.
+A mismatch causes the check to fail.
+
+This verification script regenerates the small dataset when rerun.
+Training-time data loading will be implemented separately and will not
+require solving the PDE again.
+
+### Load the saved file without regenerating data
+
+Run this Python code from the repository root:
+
+```python
+import json
+
+import numpy as np
+
+path = "data/smoke/darcy_binary_f1_N85_n10_seed2022.npz"
+
+with np.load(path, allow_pickle=False) as dataset:
+    A = dataset["A"]
+    F = dataset["F"]
+    U = dataset["U"]
+    x = dataset["x"]
+    y = dataset["y"]
+    metadata = json.loads(dataset["metadata_json"].item())
+
+print(A.shape, F.shape, U.shape)
+print(metadata["task"])
+```
+
+### Scope
+
+This is a small data-generation and serialization check, not a completed
+training dataset or a neural-operator benchmark result.
+
+No train/validation/test split or normalization is applied.
+The saved `U` fields are numerical solutions, not model predictions.
+Reference-solution accuracy for discontinuous coefficients requires
+separate validation.
+
+Generated datasets are excluded from Git through `.gitignore`.
+
+
+
 ## Modular design
 
 The tree below includes both existing components and planned modules.
@@ -209,9 +338,10 @@ OperatorBench/
 │   ├── __init__.py
 │   ├── data_generation/
 │   │   ├── __init__.py
-│   │   ├── fields.py             # Coefficient generation
+│   │   ├── fields.py             # Binary coefficient generation
 │   │   ├── darcy_fd.py           # Darcy finite-difference solver
-│   │   ├── forcing.py            # Planned: source generation
+│   │   ├── forcing.py            # Constant and sine source generation
+│   │   ├── darcy_dataset.py      # Dataset generation with a shared source
 │   │   └── darcy_tasks.py        # Planned: task configuration
 │   ├── data/                    # Planned
 │   │   ├── datasets.py
@@ -224,7 +354,9 @@ OperatorBench/
 ├── scripts/
 │   ├── __init__.py
 │   ├── check_darcy.py
-│   └── check_darcy_source.py
+│   ├── check_darcy_source.py
+│   ├── check_forcing.py
+│   └── check_darcy_dataset.py
 ├── docs/
 │   └── figures/
 │       └── darcy_sample_N85_seed2022.png
@@ -252,9 +384,11 @@ OperatorBench/
 - [x] Add basic checks and a diagnostic figure.
 - [ ] Verify numerical equivalence between notebook and modular implementations.
 - [x] Support spatially varying source fields in the solver.
-- [ ] Add configurable coefficient and source generators.
-- [ ] Define and implement the common dataset format.
-- [ ] Add data loading and training-only normalization.
+- [x] Add constant and sine source generators.
+- [x] Generate a 10-sample Darcy dataset and verify NPZ save/load consistency.
+- [ ] Extend configurable coefficient distributions and per-sample source generation.
+- [ ] Finalize the common dataset schema and train/validation/test split rules.
+- [ ] Add reusable dataset loaders and training-only normalization.
 - [ ] Migrate DeepONet and FNO.
 - [ ] Implement shared training, validation, and evaluation procedures.
 - [ ] Report relative L2 error and maximum absolute error.
