@@ -1,0 +1,41 @@
+{
+  "dataset": "data/darcy/darcy_binary_f1_v1_full_N85_train1000_val200_test200_seeds2022-2024-2025.npz",
+  "N": 85,
+  "split_sizes": {
+    "train": 1000,
+    "val": 200,
+    "test": 200
+  },
+  "split_seeds": {
+    "train": 2022,
+    "val": 2024,
+    "test": 2025
+  },
+  "model_init_seed": 2026,
+  "cpu_threads": 2,
+  "training": {
+    "num_steps": 25000,
+    "batch_size": 20,
+    "validate_every": 200,
+    "eval_batch_size": 32,
+    "learning_rate": 0.001,
+    "weight_decay": 0.000001,
+    "scheduler_step_size": 5000,
+    "scheduler_gamma": 0.5,
+    "sampling_seed": 2027
+  },
+  "models": {
+    "deeponet": {
+      "n_sensors": 7225,
+      "latent_dim": 128,
+      "branch_hidden": [400, 400, 400],
+      "trunk_hidden": [128, 128, 128],
+      "use_hard_dirichlet": false
+    },
+    "fno": {
+      "modes1": 20,
+      "modes2": 20,
+      "width": 32
+    }
+  }
+}

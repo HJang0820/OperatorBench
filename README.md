@@ -9,29 +9,52 @@ Burgers experiments are planned as a subsequent extension.
 
 ## Current status
 
-Preliminary Darcy experiments were conducted in Jupyter notebooks.
-The existing implementation is being migrated into reusable Python modules.
+The initial baseline is a 2D Darcy coefficient-to-solution task (`a_to_u`)
+on an 85 x 85 grid, using binary coefficients, a fixed source `f = 1`,
+and homogeneous Dirichlet boundary conditions.
 
-The coefficient generator, finite-difference solver, and diagnostic
-plotting script have been extracted into reusable modules.
+### Implemented and checked
 
-The solver now accepts either a scalar source or an `(N, N)` source array
-on the same grid as the coefficient field. The original constant-source
-diagnostic continues to pass.
+- Binary coefficient generation and a flux-form finite-difference solver.
+- Scalar and spatially varying source support in the solver.
+- Constant and sine source generators.
+- Numerical verification using a smooth, constant-coefficient manufactured solution.
+- Dataset generation, NPZ storage, and loading.
+- Training/validation/test splits with 1,000/200/200 samples.
+- Normalization fitted using training data only.
+- Model-specific input preparation for DeepONet and FNO.
+- DeepONet and FNO implementations migrated from the existing notebooks.
+- Forward, loss/backward, and fixed-batch learning checks.
+- Shared training and validation with validation-based best-model selection.
+- Checkpoint saving and resuming, including a two-step FNO integration check.
 
-A smooth, constant-coefficient manufactured-solution test has been added.
-Grid refinement on 17 x 17, 33 x 33, and 65 x 65 grids shows approximately
-second-order convergence.
+The training code supports CPU and CUDA device selection.
+The current full baseline runs use CPU. Full GPU baseline experiments
+remain pending.
 
-Constant and sine source generators are now implemented and checked.
+### Preliminary training status
 
-A small coefficient-to-solution (`a_to_u`) dataset can be generated using
-the migrated notebook workflow. The current smoke test generates
-10 samples on an 85 x 85 grid with a shared constant source `f = 1`,
-saves the fields and generation metadata, and verifies exact array
-equality after loading the saved file.
+This is a progress snapshot, not a completed test-set benchmark.
 
-The complete modular training and evaluation pipeline is not yet available.
+| Model | Training status | Best validation relative L2 | Test evaluation |
+| --- | --- | --- | --- |
+| DeepONet | Completed: 25,000 updates | 6.2291% at update 24,600 | Pending |
+| FNO | In progress | Not finalized | Pending |
+
+Validation errors are not test errors. Final comparison will use the
+same held-out test set of 200 samples.
+
+### Remaining work
+
+- Complete the FNO baseline run and evaluate both models on the held-out test set.
+- Report relative L2 error, maximum absolute error, and prediction plots.
+- Extend reference-solution verification to variable and discontinuous coefficients.
+- Validate higher-resolution datasets, including 421 x 421 grids.
+- Add configurable positive lognormal coefficient fields.
+- Implement sample-varying source datasets and complete `f_to_u` and `af_to_u` workflows.
+
+Source-array support in the solver does not yet imply support for all
+source-input learning tasks. The current training baseline remains `a_to_u`.
 
 ## Darcy problem
 
@@ -329,74 +352,179 @@ Generated datasets are excluded from Git through `.gitignore`.
 
 ## Modular design
 
-The tree below includes both existing components and planned modules.
-Files marked "planned" are not yet available.
+The following structure describes the implemented Darcy baseline components.
+Paths are relative to the repository root.
 
 ```text
 OperatorBench/
+├── configs/
+│   └── darcy_baseline.json       # Dataset, model, and training settings
 ├── operatorbench/
 │   ├── __init__.py
 │   ├── data_generation/
 │   │   ├── __init__.py
 │   │   ├── fields.py             # Binary coefficient generation
-│   │   ├── darcy_fd.py           # Darcy finite-difference solver
 │   │   ├── forcing.py            # Constant and sine source generation
-│   │   ├── darcy_dataset.py      # Dataset generation with a shared source
-│   │   └── darcy_tasks.py        # Planned: task configuration
-│   ├── data/                    # Planned
-│   │   ├── datasets.py
-│   │   └── preprocessing.py
-│   ├── models/                  # Planned notebook migration
-│   │   ├── deeponet.py
-│   │   └── fno.py
-│   ├── training.py              # Planned
-│   └── evaluation.py            # Planned
+│   │   ├── darcy_fd.py           # Flux-form finite-difference solver
+│   │   └── darcy_dataset.py      # Dataset generation, storage, and loading
+│   ├── data/
+│   │   ├── __init__.py
+│   │   ├── datasets.py           # Dataset loading and access
+│   │   ├── preprocessing.py      # Training-only normalization
+│   │   └── model_inputs.py       # DeepONet and FNO input preparation
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── deeponet.py           # DeepONet model
+│   │   └── fno.py                # Fourier Neural Operator model
+│   ├── losses.py                # Relative L2 loss and per-sample errors
+│   ├── evaluation.py            # Batched relative L2 evaluation
+│   └── training.py              # Training, validation, and checkpoint recovery
 ├── scripts/
 │   ├── __init__.py
 │   ├── check_darcy.py
 │   ├── check_darcy_source.py
 │   ├── check_forcing.py
-│   └── check_darcy_dataset.py
+│   ├── check_darcy_dataset.py
+│   ├── generate_darcy_splits.py
+│   ├── check_darcy_loader.py
+│   ├── check_darcy_preprocessing.py
+│   ├── check_darcy_model_inputs.py
+│   ├── check_darcy_models.py
+│   ├── check_darcy_backward.py
+│   ├── check_darcy_fixed_batch.py
+│   ├── check_darcy_training.py
+│   ├── check_darcy_resume.py
+│   └── train_darcy.py
 ├── docs/
 │   └── figures/
 │       └── darcy_sample_N85_seed2022.png
-├── configs/                     # Planned
-├── tests/                       # Planned
-└── notebooks/                   # Planned
+├── .gitignore
+└── README.md
 ```
+
+Generated datasets are stored under `data/`, and experiment outputs are
+stored under `outputs/`. These directories are excluded from Git.
+
+The current executable checks are located in `scripts/`.
+The tree does not imply that every planned benchmark feature is implemented.
+
+### Component responsibilities
+
+| Component | Responsibility |
+| --- | --- |
+| `data_generation` | Generate coefficient/source fields, solve the PDE, and store numerical data and metadata. |
+| `data` | Load saved data, apply training-derived normalization, and prepare model-specific inputs. |
+| `models` | Define DeepONet and FNO forward computations. |
+| `losses.py` | Compute relative L2 losses and per-sample errors. |
+| `evaluation.py` | Evaluate relative L2 errors in batches without updating model parameters. |
+| `training.py` | Run optimization and validation, select the best model, and save or restore training state. |
+| `configs` | Record the settings for a specific baseline experiment. |
+| `scripts` | Provide entry points for generation, diagnostic checks, and training. |
+
+The evaluation utility is implemented and used during validation.
+The final held-out test comparison and result reporting remain pending.
 
 ### Design principles
 
-1. Separate numerical data generation from model training.
-2. Preserve `a`, `f`, `u`, coordinates, boundary conditions, and generation metadata.
-   Fixed fields may be stored as shared metadata rather than duplicated arrays.
-3. Select the model inputs through task configuration.
-4. Give DeepONet and FNO the same physical input information and data splits.
-5. Fit normalization statistics using training data only.
-6. Select checkpoints using validation data and reserve test data for final evaluation.
-7. Separate code migration from changes to numerical methods and model architectures.
-8. Record dependency versions, random seeds, configurations, and evaluation rules.
+1. Keep numerical data generation separate from model training.
+   Training should load saved data rather than solve the PDE again.
+
+2. Preserve physical fields, coordinates, and generation metadata.
+   Model-specific input layouts are constructed during preprocessing.
+
+3. Fit normalization statistics using training data only.
+   Apply the same statistics to validation and test data.
+
+4. Use the same data splits and physical input information for both models.
+   Record architecture and optimization settings explicitly.
+
+5. Select the best model using validation data.
+   Reserve the held-out test set for final evaluation.
+
+6. Separate evaluation checkpoints from recovery checkpoints.
+   `best.pt` stores the validation-selected model.
+   `last.pt` stores the state needed to continue training.
+
+7. Use a shared training implementation with CPU or CUDA device selection.
+   The current resume implementation requires matching saved settings
+   and execution environment; CPU-to-GPU migration is not yet supported.
+
+8. Preserve the existing notebook implementations where practical.
+   Treat code migration, numerical-method changes, and architecture
+   changes as separate activities.
+
+9. Record configurations, random seeds, dataset fingerprints, and
+   execution-environment information for traceability.
+
+10. Distinguish implemented features, completed checks, preliminary
+    validation results, and final test-set benchmark results.
+
+### Extension scope
+
+The current training baseline is `a_to_u` with binary coefficients
+and a fixed source `f = 1`.
+
+The numerical solver accepts source arrays, but sample-varying source
+datasets and the complete `f_to_u` and `af_to_u` learning workflows
+remain planned.
+
+Configurable positive lognormal coefficient fields and higher-resolution
+validation are also future extensions. Supporting these tasks requires
+additional implementation and testing, not only changing an input label.
 
 ## Darcy roadmap
 
-- [x] Extract the binary coefficient generator.
-- [x] Extract the constant-source Darcy solver.
-- [x] Add basic checks and a diagnostic figure.
-- [ ] Verify numerical equivalence between notebook and modular implementations.
-- [x] Support spatially varying source fields in the solver.
-- [x] Add constant and sine source generators.
-- [x] Generate a 10-sample Darcy dataset and verify NPZ save/load consistency.
-- [ ] Extend configurable coefficient distributions and per-sample source generation.
-- [ ] Finalize the common dataset schema and train/validation/test split rules.
-- [ ] Add reusable dataset loaders and training-only normalization.
-- [ ] Migrate DeepONet and FNO.
-- [ ] Implement shared training, validation, and evaluation procedures.
-- [ ] Report relative L2 error and maximum absolute error.
-- [x] Verify approximately second-order convergence for a smooth, constant-coefficient manufactured solution.
-- [ ] Validate reference-solution accuracy for spatially varying and discontinuous coefficient fields.
-- [ ] Validate higher-resolution reference generation, including 421 x 421 grids.
-- [ ] Document reproducible Darcy baseline results.
+Checked items indicate implemented work or completed checks.
+They do not imply that the full benchmark has been completed.
 
+### Implemented and checked
+
+- [x] Extract the binary coefficient generator from the existing workflow.
+- [x] Extract the flux-form finite-difference Darcy solver.
+- [x] Add basic solver checks and a diagnostic coefficient/solution figure.
+- [x] Support scalar and spatially varying source fields in the solver.
+- [x] Add constant and sine source generators.
+- [x] Generate a 10-sample dataset and verify NPZ save/load consistency.
+- [x] Generate and save the initial 1,000/200/200 training/validation/test splits.
+- [x] Add reusable dataset loading.
+- [x] Fit normalization statistics using training data only.
+- [x] Add DeepONet branch/trunk and FNO grid input preparation.
+- [x] Migrate the DeepONet and FNO model implementations.
+- [x] Check model forward outputs and loss/backward computations.
+- [x] Check that both models can reduce loss on a small fixed batch.
+- [x] Implement shared training and validation.
+- [x] Implement batched per-sample relative L2 evaluation.
+- [x] Select and save the best model using validation data.
+- [x] Implement checkpoint saving and resuming.
+- [x] Pass the CPU checkpoint-restoration checks.
+- [x] Pass the two-step FNO save/resume integration check.
+- [x] Verify approximately second-order convergence for a smooth, constant-coefficient manufactured solution.
+- [x] Complete the 25,000-update CPU DeepONet baseline run.
+
+### Current baseline milestone
+
+- [ ] Complete the 25,000-update CPU FNO baseline run.
+- [ ] Evaluate both validation-selected models on the same 200 test samples.
+- [ ] Report final test relative L2 errors.
+- [ ] Add and report maximum absolute errors.
+- [ ] Add reference, prediction, and error plots for both models.
+- [ ] Document the final baseline results together with configurations and execution environments.
+
+### Further verification and extensions
+
+- [ ] Verify notebook-to-module numerical equivalence under aligned settings.
+- [ ] Validate reference-solution accuracy for spatially varying and discontinuous coefficients.
+- [ ] Validate higher-resolution reference generation, including 421 x 421 grids.
+- [ ] Check model memory requirements and execution at higher resolutions.
+- [ ] Support batch-wise device transfer for datasets that do not fit in GPU memory.
+- [ ] Run and document full GPU baseline experiments.
+- [ ] Add configurable positive lognormal coefficient fields with controlled spatial regularity.
+- [ ] Add sample-varying source generation.
+- [ ] Implement and check the complete `f_to_u` learning workflow.
+- [ ] Implement and check the complete `af_to_u` learning workflow.
+- [ ] Extend the dataset schema and configuration interface to cover these additional tasks.
+
+The current priority is completing and reporting the initial Darcy baseline.
 Burgers support will follow the Darcy milestone.
 
 ## References
