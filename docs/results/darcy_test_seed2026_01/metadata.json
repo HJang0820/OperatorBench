@@ -1,0 +1,140 @@
+{
+  "evaluated_at_utc": "2026-10-21T00:05:36.576826+00:00",
+  "dataset_sha256": "67b9278d7e62e06a3ac1d192ea7600094538229a5691024583283c28209b4fa3",
+  "split": "test",
+  "grid": [
+    85,
+    85
+  ],
+  "metric_domain": "all grid points, including boundaries; uniform discrete norms",
+  "solution_scale": "physical",
+  "relative_l2_denominator_epsilon": 1e-12,
+  "std_note": "Variation across test samples, not across repeated training seeds.",
+  "figure_sample_indices": [
+    0,
+    1,
+    2
+  ],
+  "metrics": [
+    {
+      "model": "DeepONet",
+      "n_test": 200,
+      "best_step": 24600,
+      "validation_relative_l2": 0.062291327863931656,
+      "test_relative_l2_mean": 0.06247418457097338,
+      "test_relative_l2_std_across_samples": 0.018457722006905514,
+      "test_relative_l2_mean_percent": 6.247418457097338,
+      "test_max_absolute_error_mean": 0.0017764931471901946,
+      "test_max_absolute_error_worst": 0.003514425363391638
+    },
+    {
+      "model": "FNO",
+      "n_test": 200,
+      "best_step": 25000,
+      "validation_relative_l2": 0.007992777973413467,
+      "test_relative_l2_mean": 0.007630388780264301,
+      "test_relative_l2_std_across_samples": 0.004013991954634704,
+      "test_relative_l2_mean_percent": 0.7630388780264301,
+      "test_max_absolute_error_mean": 0.0002527655281301122,
+      "test_max_absolute_error_worst": 0.0005811380688101053
+    }
+  ],
+  "evaluation_environment": {
+    "python": "3.14.2",
+    "numpy": "2.5.4",
+    "torch": "2.14.1+cpu",
+    "device": "cpu",
+    "cpu_threads": 2,
+    "batch_size": 16,
+    "gpu_name": null
+  },
+  "evaluation_code_sha256": {
+    "scripts/evaluate_darcy.py": "9929b01ae675f95512981d5fdd500fcc13de9addd10f6c482c467ef30e0148c3",
+    "operatorbench/inference.py": "1f32ec05fe329ec13f8e9f7479622ece48065fcb4aeaffa70ef75cde023b3fcf"
+  },
+  "checkpoints": {
+    "deeponet": {
+      "checkpoint_sha256": "a7c15162a5ae00e6aa2875cdf15e826b7f847972e542c6a81b7839ea4b43f888",
+      "model_config": {
+        "n_sensors": 7225,
+        "latent_dim": 128,
+        "branch_hidden": [
+          400,
+          400,
+          400
+        ],
+        "trunk_hidden": [
+          128,
+          128,
+          128
+        ],
+        "use_hard_dirichlet": false
+      },
+      "normalization": {
+        "a_mean": 7.513044834136963,
+        "a_std": 4.499980926513672,
+        "u_scale": 0.006730388384312391
+      },
+      "training_config": {
+        "num_steps": 25000,
+        "batch_size": 20,
+        "validate_every": 200,
+        "eval_batch_size": 32,
+        "learning_rate": 0.001,
+        "weight_decay": 1e-06,
+        "scheduler_step_size": 5000,
+        "scheduler_gamma": 0.5,
+        "sampling_seed": 2027
+      },
+      "model_init_seed": 2026,
+      "training_environment": {
+        "python": "3.14.2",
+        "platform": "Linux-6.8.0-1064-azure-x86_64-with-glibc2.39",
+        "numpy": "2.5.4",
+        "torch": "2.14.1+cpu",
+        "device": "cpu",
+        "gpu_name": null,
+        "cuda_version": null,
+        "cpu_threads": 2
+      },
+      "parameter_real_components": 3312449
+    },
+    "fno": {
+      "checkpoint_sha256": "446841e31714d52fa7dbe608360c173bd19ce6059c500aca08539b39164953a1",
+      "model_config": {
+        "modes1": 20,
+        "modes2": 20,
+        "width": 32
+      },
+      "normalization": {
+        "a_mean": 7.513044834136963,
+        "a_std": 4.499980926513672,
+        "u_scale": 0.006730388384312391
+      },
+      "training_config": {
+        "num_steps": 25000,
+        "batch_size": 20,
+        "validate_every": 200,
+        "eval_batch_size": 32,
+        "learning_rate": 0.001,
+        "weight_decay": 1e-06,
+        "scheduler_step_size": 5000,
+        "scheduler_gamma": 0.5,
+        "sampling_seed": 2027,
+        "checkpoint_every": 200
+      },
+      "model_init_seed": 2026,
+      "training_environment": {
+        "python": "3.14.2",
+        "platform": "Linux-6.8.0-1064-azure-x86_64-with-glibc2.39",
+        "numpy": "2.5.4",
+        "torch": "2.14.1+cpu",
+        "device": "cpu",
+        "gpu_name": null,
+        "cuda_version": null,
+        "cpu_threads": 2
+      },
+      "parameter_real_components": 6562305
+    }
+  }
+}

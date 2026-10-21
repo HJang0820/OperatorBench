@@ -26,35 +26,254 @@ and homogeneous Dirichlet boundary conditions.
 - DeepONet and FNO implementations migrated from the existing notebooks.
 - Forward, loss/backward, and fixed-batch learning checks.
 - Shared training and validation with validation-based best-model selection.
-- Checkpoint saving and resuming, including a two-step FNO integration check.
+- Checkpoint saving and resuming, including the FNO integration check.
+- Completed 25,000-update CPU baseline training for both models.
+- Evaluated both validation-selected checkpoints on the same 200 held-out test samples.
+- Saved aggregate metrics, per-sample errors, physical-scale predictions, and comparison figures.
 
-The training code supports CPU and CUDA device selection.
-The current full baseline runs use CPU. Full GPU baseline experiments
-remain pending.
+See [Darcy baseline test results](#darcy-baseline-test-results) for the results,
+or [Run with VS Code](#run-with-vs-code) for execution instructions.
 
-### Preliminary training status
-
-This is a progress snapshot, not a completed test-set benchmark.
-
-| Model | Training status | Best validation relative L2 | Test evaluation |
-| --- | --- | --- | --- |
-| DeepONet | Completed: 25,000 updates | 6.2291% at update 24,600 | Pending |
-| FNO | In progress | Not finalized | Pending |
-
-Validation errors are not test errors. Final comparison will use the
-same held-out test set of 200 samples.
+The code supports CPU and CUDA device selection. The reported full training
+runs used CPU; full GPU baseline experiments remain pending.
 
 ### Remaining work
 
-- Complete the FNO baseline run and evaluate both models on the held-out test set.
-- Report relative L2 error, maximum absolute error, and prediction plots.
+- Repeat baseline experiments across training seeds and study model-specific tuning budgets.
+- Verify notebook-to-module numerical equivalence under aligned settings.
 - Extend reference-solution verification to variable and discontinuous coefficients.
-- Validate higher-resolution datasets, including 421 x 421 grids.
+- Validate higher-resolution datasets and model execution, including 421 x 421 grids.
 - Add configurable positive lognormal coefficient fields.
 - Implement sample-varying source datasets and complete `f_to_u` and `af_to_u` workflows.
 
-Source-array support in the solver does not yet imply support for all
-source-input learning tasks. The current training baseline remains `a_to_u`.
+This completes the first fixed-configuration Darcy comparison, not the entire
+benchmark project. Source-array support in the solver does not yet imply
+support for all source-input learning tasks. The current baseline remains `a_to_u`.
+
+## Darcy baseline test results
+
+Both validation-selected checkpoints were evaluated on the same 200 held-out test samples.
+No training or checkpoint selection was performed using the test set.
+
+| Model | Selected update | Mean test relative L2 (%) | Mean sample maximum absolute error | Worst absolute error |
+| --- | ---: | ---: | ---: | ---: |
+| DeepONet | 24600 | 6.2474 | 1.776493e-03 | 3.514425e-03 |
+| FNO | 25000 | 0.7630 | 2.527655e-04 | 5.811381e-04 |
+
+Relative L2 is computed per sample and then averaged over 200 samples.
+Absolute errors are measured after restoring the physical solution scale.
+All grid points, including boundary points, are included. The worst absolute
+error is the maximum over all test samples and grid points.
+
+- [Full metric table](docs/results/darcy_test_seed2026_01/comparison.csv)
+- [Per-sample errors](docs/results/darcy_test_seed2026_01/per_sample.csv)
+- [Recorded settings, environments and fingerprints](docs/results/darcy_test_seed2026_01/metadata.json)
+
+### Prediction examples
+
+Sample indices 0, 1 and 2 were selected before inspecting prediction errors.
+Within each figure, the reference and predictions share a color scale;
+the two absolute-error panels also share a color scale.
+
+![Darcy test sample 0](docs/figures/darcy_test_seed2026_01/sample_000.png)
+
+Additional examples: [sample 1](docs/figures/darcy_test_seed2026_01/sample_001.png),
+[sample 2](docs/figures/darcy_test_seed2026_01/sample_002.png).
+
+### Interpretation and limitations
+
+These are results for the initial binary-coefficient, fixed-source Darcy baseline,
+with one training initialization seed per model. They do not establish universal
+model superiority. Test-sample variability is not variability across training seeds.
+The targets are finite-difference reference solutions; reference accuracy for
+discontinuous coefficients and higher-resolution datasets remains to be verified.
+
+## Run with VS Code
+
+VS Code is the editor; the selected workspace and Python interpreter determine
+where the computation runs. Opening a local checkout runs on your computer.
+Connecting VS Code to a Codespace runs on the remote Codespace instead.
+
+### Choose an execution path
+
+| Goal | Required local files | Where to start |
+| --- | --- | --- |
+| Try basic checks | Source code only | Setup and basic checks below |
+| Train a new baseline | Source code; generate the dataset first | Full workflow below |
+| Evaluate existing trained models | Source code, the original dataset, and both `best.pt` files | Existing-checkpoint evaluation below |
+
+Generated datasets and checkpoints are excluded from Git. A fresh clone does
+not contain trained models. The repository publishes small result tables,
+figures, and recorded metadata; it does not currently provide a checkpoint
+download release. Generate and train locally, or obtain the original artifacts
+from the experiment owner.
+
+### 1. Open the repository
+
+Install Git, a supported Python interpreter, VS Code, and Microsoft's Python
+extension for VS Code. Python 3.11 is a suitable starting point for a new local
+environment; the recorded benchmark environment is documented separately in
+the published result metadata.
+
+In VS Code, use `Git: Clone` from the Command Palette and clone
+[this repository](https://github.com/HJang0820/OperatorBench).
+Open the cloned `OperatorBench` folder, not its parent directory.
+Then select **Terminal > New Terminal**.
+
+If you already have a working Codespace with the dependencies installed,
+skip the fresh-environment installation steps. Do not reinstall packages
+immediately before demonstrating existing results.
+
+### 2. Prepare a CPU environment
+
+The setup commands below are for a **new** environment. They are installation
+instructions, not a pinned dependency lockfile. Exact results across package
+versions, devices, and operating systems are not guaranteed to be identical.
+See the published metadata for the recorded training and evaluation environments.
+
+#### Local Windows workspace in VS Code
+
+Run these commands in the VS Code terminal from the repository root:
+
+```powershell
+python --version
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install numpy scipy matplotlib
+.\.venv\Scripts\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+```
+
+Use `Python: Select Interpreter` from the Command Palette and choose
+`.venv\Scripts\python.exe`. The explicit interpreter paths below do not require
+PowerShell activation scripts or execution-policy changes.
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.check_darcy
+.\.venv\Scripts\python.exe -m scripts.check_darcy_inference
+```
+
+#### Linux or a new Codespaces environment
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install numpy scipy matplotlib
+python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+python -m scripts.check_darcy
+python -m scripts.check_darcy_inference
+```
+
+These checks do not train a production model. The first checks a numerical
+Darcy solution and saves a diagnostic figure; the second uses small artificial
+arrays to check inference and error calculations. Expected messages include:
+
+```text
+Basic solver checks passed.
+Darcy inference and metric checks passed.
+```
+
+The scripts are run with `python -m` from the repository root. This project
+does not currently require an editable package installation.
+
+For CUDA, install a suitable build using the
+[official PyTorch installation guide](https://pytorch.org/get-started/locally/).
+The CPU installation above deliberately does not enable CUDA. A laptop's brand
+does not determine CUDA availability; compatible hardware, drivers, and a CUDA
+build of PyTorch are required. CPU execution remains supported.
+
+### 3. Generate data and train new models
+
+The committed split generator uses `SMALL_RUN = False` to generate the full
+1,000/200/200 split. If a matching cached dataset exists, the generator loads
+and checks it instead of regenerating it. Full training is not a quick demo
+and can take many hours on CPU.
+
+**Windows VS Code terminal:**
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.generate_darcy_splits
+.\.venv\Scripts\python.exe -u -m scripts.train_darcy --model deeponet --device cpu --run-name deeponet_cpu_local_01
+.\.venv\Scripts\python.exe -u -m scripts.train_darcy --model fno --device cpu --run-name fno_cpu_local_01
+.\.venv\Scripts\python.exe -u -m scripts.evaluate_darcy --device cpu --batch-size 4 --deeponet-checkpoint outputs/deeponet_cpu_local_01/best.pt --fno-checkpoint outputs/fno_cpu_local_01/best.pt --output-dir outputs/darcy_test_local_01
+```
+
+**Linux / Codespaces terminal with the environment active:**
+
+```bash
+python -m scripts.generate_darcy_splits
+python -u -m scripts.train_darcy --model deeponet --device cpu --run-name deeponet_cpu_local_01
+python -u -m scripts.train_darcy --model fno --device cpu --run-name fno_cpu_local_01
+python -u -m scripts.evaluate_darcy --device cpu --batch-size 4 --deeponet-checkpoint outputs/deeponet_cpu_local_01/best.pt --fno-checkpoint outputs/fno_cpu_local_01/best.pt --output-dir outputs/darcy_test_local_01
+```
+
+Run the commands sequentially. Use a new run name for a new experiment.
+For an interrupted run, use the same training command with `--resume` only
+when its `last.pt` exists and the saved settings, source files, and execution
+environment still match. Do not start over in or delete an existing run folder.
+
+Adding Python modules can also change the training code fingerprint. Freeze the
+source tree and environment while a resumable experiment is in progress.
+Cross-machine or CPU-to-GPU training-state migration is not currently supported.
+
+### 4. Evaluate existing checkpoints on another computer
+
+For example, to evaluate the original experiment on a Lenovo laptop:
+
+1. Open a local clone in VS Code and prepare its Python environment as above.
+2. Obtain the following **original files** from the experiment machine.
+3. Place them at the same repository-relative locations shown below.
+4. Run evaluation without training.
+
+```text
+OperatorBench/
+├── data/
+│   └── darcy/
+│       └── darcy_binary_f1_v1_full_N85_train1000_val200_test200_seeds2022-2024-2025.npz
+└── outputs/
+    ├── deeponet_full_seed2026_01/
+    │   └── best.pt
+    └── fno_full_seed2026_resume_01/
+        └── best.pt
+```
+
+Do not recreate the dataset as a substitute for the original artifact.
+The evaluator checks the dataset file's SHA-256 fingerprint. Using the same
+random seeds on another environment does not guarantee an identical file.
+Copy the original NPZ file without opening and resaving it. Do not copy a
+virtual environment between computers; recreate the environment locally.
+
+The evaluator also checks relevant model/preprocessing source files against
+the checkpoint. Use the source version that matches those files. Repository
+attributes preserve LF line endings for Python files on Windows. If a source
+fingerprint differs, investigate it rather than disabling the check.
+
+**Windows VS Code terminal:**
+
+```powershell
+.\.venv\Scripts\python.exe -u -m scripts.evaluate_darcy --device cpu --batch-size 4 --output-dir outputs/darcy_test_lenovo_01
+```
+
+**Existing Codespaces environment:**
+
+```bash
+python -u -m scripts.evaluate_darcy --device cpu --batch-size 4 --output-dir outputs/darcy_test_live_demo_01
+```
+
+The checkpoint paths default to the original run folders shown above.
+`--output-dir` is a new result folder, not a checkpoint folder. An existing
+output folder is never overwritten; choose another name, such as a suffix
+`_02`, for a repeated demonstration.
+
+Successful execution ends with `Darcy test evaluation completed.`
+Open the generated CSV files and PNG figures in the VS Code Explorer.
+Predictions are saved in physical units and can be replotted without training.
+The original `best.pt` files are read but not modified.
+
+Checkpoint inference on a different computer is distinct from resuming
+optimizer state. Record the new evaluation environment and allow for numerical
+differences between environments. Do not use test results to retune the models.
+
 
 ## Darcy problem
 
@@ -310,8 +529,8 @@ Instead, it compares the existing file against the newly generated data.
 A mismatch causes the check to fail.
 
 This verification script regenerates the small dataset when rerun.
-Training-time data loading will be implemented separately and will not
-require solving the PDE again.
+The training and evaluation workflows load the saved split dataset
+without solving the PDE again.
 
 ### Load the saved file without regenerating data
 
@@ -495,37 +714,41 @@ They do not imply that the full benchmark has been completed.
 - [x] Implement shared training and validation.
 - [x] Implement batched per-sample relative L2 evaluation.
 - [x] Select and save the best model using validation data.
-- [x] Implement checkpoint saving and resuming.
-- [x] Pass the CPU checkpoint-restoration checks.
+- [x] Implement and check checkpoint saving and resuming.
 - [x] Pass the two-step FNO save/resume integration check.
 - [x] Verify approximately second-order convergence for a smooth, constant-coefficient manufactured solution.
+
+### Initial baseline milestone
+
 - [x] Complete the 25,000-update CPU DeepONet baseline run.
-
-### Current baseline milestone
-
-- [ ] Complete the 25,000-update CPU FNO baseline run.
-- [ ] Evaluate both validation-selected models on the same 200 test samples.
-- [ ] Report final test relative L2 errors.
-- [ ] Add and report maximum absolute errors.
-- [ ] Add reference, prediction, and error plots for both models.
-- [ ] Document the final baseline results together with configurations and execution environments.
+- [x] Complete the 25,000-update CPU FNO baseline run.
+- [x] Check batched inference and physical-scale error calculations.
+- [x] Evaluate both validation-selected models on the same 200 test samples.
+- [x] Report mean test relative L2 and maximum absolute errors.
+- [x] Add reference, prediction, and error plots for both models.
+- [x] Publish small result artifacts and recorded settings/environments.
+- [x] Document VS Code execution and existing-checkpoint evaluation.
 
 ### Further verification and extensions
 
 - [ ] Verify notebook-to-module numerical equivalence under aligned settings.
+- [ ] Repeat baseline experiments across training seeds.
+- [ ] Study model-specific tuning budgets and accuracy-versus-compute trade-offs.
 - [ ] Validate reference-solution accuracy for spatially varying and discontinuous coefficients.
 - [ ] Validate higher-resolution reference generation, including 421 x 421 grids.
 - [ ] Check model memory requirements and execution at higher resolutions.
-- [ ] Support batch-wise device transfer for datasets that do not fit in GPU memory.
+- [ ] Support batch-wise device transfer during training for datasets that do not fit in GPU memory.
 - [ ] Run and document full GPU baseline experiments.
 - [ ] Add configurable positive lognormal coefficient fields with controlled spatial regularity.
 - [ ] Add sample-varying source generation.
 - [ ] Implement and check the complete `f_to_u` learning workflow.
 - [ ] Implement and check the complete `af_to_u` learning workflow.
-- [ ] Extend the dataset schema and configuration interface to cover these additional tasks.
+- [ ] Extend the dataset schema and configuration interface for additional tasks.
+- [ ] Verify the end-to-end setup on additional machines, including the Lenovo laptop.
+- [ ] Provide and validate a pinned reproducibility environment.
 
-The current priority is completing and reporting the initial Darcy baseline.
-Burgers support will follow the Darcy milestone.
+The initial fixed-configuration Darcy comparison is complete.
+Burgers support will follow as a subsequent extension.
 
 ## References
 
