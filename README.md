@@ -595,8 +595,9 @@ OperatorBench/
 │   │   ├── __init__.py
 │   │   ├── deeponet.py           # DeepONet model
 │   │   └── fno.py                # Fourier Neural Operator model
-│   ├── losses.py                # Relative L2 loss and per-sample errors
-│   ├── evaluation.py            # Batched relative L2 evaluation
+│   ├── losses.py                # Relative L2 losses
+│   ├── evaluation.py            # Batched relative L2 validation
+│   ├── inference.py             # Batched predictions and physical-scale errors
 │   └── training.py              # Training, validation, and checkpoint recovery
 ├── scripts/
 │   ├── __init__.py
@@ -637,6 +638,7 @@ The tree does not imply that every planned benchmark feature is implemented.
 | `losses.py` | Compute relative L2 losses and per-sample errors. |
 | `evaluation.py` | Evaluate relative L2 errors in batches without updating model parameters. |
 | `training.py` | Run optimization and validation, select the best model, and save or restore training state. |
+| `inference.py` | Generate batched predictions and compute errors from physical-scale solution fields. |
 | `configs` | Record the settings for a specific baseline experiment. |
 | `scripts` | Provide entry points for generation, diagnostic checks, and training. |
 
