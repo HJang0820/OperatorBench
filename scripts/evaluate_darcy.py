@@ -157,6 +157,13 @@ def main():
     parser.add_argument("--output-dir", type=Path, default=(
         root / "outputs/darcy_test_seed2026_01"
     ))
+    parser.add_argument(
+    "--sample-indices",
+    type=int,
+    nargs="+",
+    default=None,
+    help="Zero-based sample indices to visualize; all test samples are evaluated.",
+    )
     args = parser.parse_args()
     if args.batch_size < 1 or args.cpu_threads < 1:
         parser.error("Batch size and CPU thread count must be positive.")
@@ -194,6 +201,18 @@ def main():
         check_compatibility(saved, data, metadata, dataset_hash, root, key)
     print("Checkpoint and dataset compatibility checks passed.", flush=True)
     print("Test samples:", len(data["U_test"]), "| Device:", device, flush=True)
+
+    n_test = len(data["U_test"])
+    if args.sample_indices is None:
+        figure_indices = list(range(min(3, n_test)))
+    else:
+        figure_indices = args.sample_indices 
+    if any(i < 0 or i >= n_test for i in figure_indices):
+        parser.error(
+        f"Sample indices must be between 0 and {n_test - 1}."
+    )
+    if len(set(figure_indices)) != len(figure_indices):
+        parser.error("Sample indices must not contain duplicates.")
 
     args.output_dir.mkdir(parents=True, exist_ok=False)
     predictions, errors, rows, provenance = {}, {}, [], {}
@@ -247,7 +266,7 @@ def main():
         U_reference=data["U_test"], U_deeponet=predictions["deeponet"], U_fno=predictions["fno"],
     )
     # Preselect examples by index, not by their prediction errors.
-    for sample_id in (0, 1, 2):
+    for sample_id in figure_indices:
         save_sample_figure(data, predictions, sample_id,
                            args.output_dir / f"sample_{sample_id:03d}.png")
     summary = {
@@ -257,7 +276,7 @@ def main():
         "metric_domain": "all grid points, including boundaries; uniform discrete norms",
         "solution_scale": "physical", "relative_l2_denominator_epsilon": 1e-12,
         "std_note": "Variation across test samples, not across repeated training seeds.",
-        "figure_sample_indices": [0, 1, 2], "metrics": rows, "checkpoints": provenance,
+        "figure_sample_indices": figure_indices, "metrics": rows, "checkpoints": provenance,
         "evaluation_environment": {
             "python": platform.python_version(), "numpy": str(np.__version__),
             "torch": str(torch.__version__), "device": str(device),
