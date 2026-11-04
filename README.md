@@ -42,13 +42,39 @@ $$
 | Models | Fully connected DeepONet and FNO |
 | Training budget | 25,000 optimizer updates per model |
 
-This workflow currently uses a fixed problem configuration.
-Changing only a configuration value does not yet provide support for
-arbitrary grids, coefficient distributions, or source-input tasks.
+## Configuration
 
-Model and training settings are recorded in
+Training settings are defined in
 [configs/darcy_baseline.json](configs/darcy_baseline.json).
-The current split generator defines its own fixed data-generation settings.
+Select a configuration file with `--config` when running
+`scripts.train_darcy`.
+
+| Setting | Purpose |
+| --- | --- |
+| `dataset` | Path to the saved dataset, relative to the repository root |
+| `N`, `split_sizes`, `split_seeds` | Expected dataset metadata, checked when loading |
+| `model_init_seed` | Seed used to initialize the model |
+| `cpu_threads` | Number of PyTorch CPU threads |
+| `training.num_steps` | Total number of optimizer updates |
+| `training.batch_size` | Number of samples per optimizer update |
+| `training.learning_rate`, `training.weight_decay` | Optimizer settings |
+| `training.scheduler_step_size`, `training.scheduler_gamma` | Learning-rate decay interval in optimizer updates and decay factor |
+| `training.validate_every`, `training.eval_batch_size` | Validation interval in optimizer updates and evaluation batch size |
+| `training.sampling_seed` | Seed for training-batch sampling |
+| `models.deeponet` | Sensor count, branch/trunk widths, latent dimension, and boundary constraint |
+| `models.fno` | Fourier modes and channel width |
+
+To customize an experiment, copy the baseline JSON file, edit the relevant
+settings, and pass the new file with `--config`. Use a new `--run-name`
+for each new experiment.
+
+The current data-generation command uses settings defined in
+`scripts/generate_darcy_splits.py`. Editing `N`, `split_sizes`, or
+`split_seeds` in the training configuration does not regenerate data.
+Dataset settings and model input dimensions must remain consistent.
+
+Evaluation restores the model configuration and preprocessing statistics
+from the checkpoint; it does not take a training configuration file.
 
 ## Run from a terminal
 
@@ -96,8 +122,8 @@ A matching cached dataset is loaded and checked instead of regenerated.
 ### 3. Train both models
 
 ```bash
-python -u -m scripts.train_darcy --model deeponet --device cpu --run-name darcy_deeponet_01
-python -u -m scripts.train_darcy --model fno --device cpu --run-name darcy_fno_01
+python -u -m scripts.train_darcy --config configs/darcy_baseline.json --model deeponet --device cpu --run-name darcy_deeponet_01
+python -u -m scripts.train_darcy --config configs/darcy_baseline.json --model fno --device cpu --run-name darcy_fno_01
 ```
 
 Run the commands sequentially. Full training can take several hours on CPU.
@@ -167,27 +193,43 @@ solution scale.
 These scores describe this experiment, not general model rankings.
 Reference accuracy for discontinuous coefficients requires further validation.
 
-## Code organization
+## Directory tour
 
-| Location | Responsibility |
+```text
+OperatorBench/
+├── configs/                    # Experiment configuration files
+├── operatorbench/
+│   ├── data_generation/        # Input fields, numerical solvers, and dataset assembly
+│   ├── data/                   # Loading, normalization, and model input preparation
+│   ├── models/                 # DeepONet and FNO architectures
+│   ├── losses.py               # Training loss functions
+│   ├── training.py             # Optimization, validation, and checkpoint recovery
+│   ├── evaluation.py           # Batched validation metrics
+│   └── inference.py            # Predictions and physical-scale errors
+├── scripts/                    # Workflow entry points and development checks
+└── docs/                       # Numerical verification and published results
+```
+
+The main workflow entry points are:
+
+| Command | Purpose |
 | --- | --- |
-| `operatorbench/data_generation/` | Field generation and numerical PDE solving |
-| `operatorbench/data/` | Loading, normalization, and model input preparation |
-| `operatorbench/models/` | DeepONet and FNO architectures |
-| `operatorbench/training.py` | Optimization, validation, and checkpoints |
-| `operatorbench/evaluation.py` | Batched validation metrics |
-| `operatorbench/inference.py` | Batched prediction and physical-scale errors |
-| `scripts/` | Executable workflows and development checks |
+| `python -m scripts.generate_darcy_splits` | Generate or load the saved dataset splits |
+| `python -m scripts.train_darcy` | Train a selected model or resume training |
+| `python -m scripts.evaluate_darcy` | Predict, evaluate, and plot selected test samples |
+| `python -m scripts.export_darcy_report` | Export evaluation results for documentation |
 
-See [Numerical verification](docs/numerical-verification.md) for
-the manufactured-solution test and observed grid convergence.
+The commands above identify the entry points. See
+[Run from a terminal](#run-from-a-terminal) for complete commands, or
+use `--help` with the training and evaluation commands for available options.
 
-## Planned extensions
+Generated datasets are stored locally under `data/`, and experiment
+outputs under `outputs/`. Both directories are excluded from Git.
 
-- Configurable coefficient/source fields and additional input tasks.
-- Validated higher-resolution datasets and model compatibility.
-- Repeated training runs and comparisons of accuracy and computational cost.
-- Burgers benchmarks.
+Numerical verification details are documented in
+[Numerical verification](docs/numerical-verification.md).
+
+
 
 ## References
 
