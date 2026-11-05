@@ -76,6 +76,31 @@ Dataset settings and model input dimensions must remain consistent.
 Evaluation restores the model configuration and preprocessing statistics
 from the checkpoint; it does not take a training configuration file.
 
+
+## Software compatibility
+
+OperatorBench has been checked with the following software combinations.
+The current Darcy workflow uses PyTorch and does not require JAX.
+
+| Python | PyTorch | CUDA |
+| --- | --- | --- |
+| 3.10.20 | 2.7.1+cu118 | 11.8 |
+| 3.11.15 | 2.11.0+cu128 | 12.8 |
+| 3.14.2 | 2.14.1+cpu | CPU only |
+
+The CPU configuration was used for the reported full Darcy baseline
+training and test evaluation. The CUDA configurations passed focused
+checks covering the Darcy solver, model forward/backward execution,
+inference metrics, and checkpoint saving and resuming.
+
+CUDA versions refer to the PyTorch builds used for verification.
+These are verified combinations; compatibility with other versions
+has not yet been established.
+
+Last checked: 2026-11-05.
+
+
+
 ## Run from a terminal
 
 Run all commands from the repository root.
