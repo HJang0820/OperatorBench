@@ -42,6 +42,19 @@ $$
 | Models | Fully connected DeepONet and FNO |
 | Training budget | 25,000 optimizer updates per model |
 
+## Common data interface
+
+The [common data schema v0.1](docs/common-data-schema.md) separates physical
+fields from their operator-learning roles (`inputs`, `targets`, `fixed_fields`).
+It records coordinates, field-specific time information, conditions, splits,
+and available generation metadata. Field axes are
+`(sample, time, point, component)`.
+
+The current adapter converts existing Darcy `a -> u` and `f -> u` split files
+to a separate common NPZ and checks exact save/load consistency. Existing
+training and evaluation commands still use the original Darcy split format.
+See the linked specification for conversion commands, examples, and limits.
+
 ## Configuration
 
 Training settings are defined in

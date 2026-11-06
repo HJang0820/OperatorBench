@@ -1,0 +1,9 @@
+{
+  "task": "a_to_u",
+  "domain": [[0.0, 1.0], [0.0, 1.0]],
+  "boundary": "homogeneous_dirichlet",
+  "source": {"kind": "constant", "value": 1.0},
+  "coefficient": {"generator": "sample_fno_darcy_coefficients", "n_modes": 85, "values": [3.0, 12.0]},
+  "solver": {"method": "five_point_fd", "face_average": "arithmetic", "compute_dtype": "float64"},
+  "splits": {"train": {"n_samples": 1000, "seed": 2022}, "val": {"n_samples": 200, "seed": 2024}, "test": {"n_samples": 200, "seed": 2025}}
+}
