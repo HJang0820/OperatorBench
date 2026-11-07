@@ -259,6 +259,22 @@ solution scale.
 These scores describe this experiment, not general model rankings.
 Reference accuracy for discontinuous coefficients requires further validation.
 
+### Source-to-solution (`f -> u`, local GPU experiment)
+
+This Darcy task fixes the coefficient at `a = 1` and uses homogeneous
+Dirichlet boundaries on an 85 x 85 grid. The input is Gaussian sine-series
+forcing with `n_modes = 4`, `amplitude = 1`, and `smoothness = 2`.
+Reference solutions use flux-form five-point finite differences with
+arithmetic face averages.
+
+Both models were trained for 25,000 optimizer updates and evaluated on
+the same 200 held-out samples. The table reports mean per-sample relative L2 error.
+
+| Model | Initial learning rate | Mean test relative L2 (%) |
+| --- | ---: | ---: |
+| DeepONet (GELU in branch hidden layers) | 1e-04 | 6.1843 |
+| FNO | 1e-03 | 0.1626 |
+
 ## Directory tour
 
 ```text
