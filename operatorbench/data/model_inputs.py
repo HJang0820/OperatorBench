@@ -41,7 +41,10 @@ def _coordinate_grid(x, y):
 
 
 def make_deeponet_branch(A_normalized):
-    """Flatten already-normalized coefficients; do not normalize again."""
+    """Flatten an already-normalized scalar input (a or f) in C order.
+
+    The argument name is retained for existing keyword-based calls.
+    """
     A_normalized = _check_fields(A_normalized, "A_normalized")
     B = A_normalized.shape[0]
 
@@ -67,12 +70,15 @@ def make_deeponet_coords(x, y):
 
 
 def make_fno_input(A_normalized, x, y):
-    """Build channel-last [a_normalized, x, y] inputs."""
+    """Build channel-last [normalized scalar input, x, y] arrays.
+
+    The argument name is retained for existing keyword-based calls.
+    """
     A_normalized = _check_fields(A_normalized, "A_normalized")
     X, Y = _coordinate_grid(x, y)
 
     if A_normalized.shape[1:] != X.shape:
-        raise ValueError("Coefficient grid and coordinate grid must match.")
+        raise ValueError("Input grid and coordinate grid must match.")
 
     X_batch = np.broadcast_to(X[None, :, :], A_normalized.shape)
     Y_batch = np.broadcast_to(Y[None, :, :], A_normalized.shape)
@@ -85,3 +91,19 @@ def make_fno_target(U_scaled):
     U_scaled = _check_fields(U_scaled, "U_scaled")
 
     return U_scaled[..., None].copy()
+
+
+def prepare_model_arrays(X_normalized, U_scaled, x, y, model_key):
+    """Adapt one normalized input field and its target to a model's layout."""
+    X_normalized = _check_fields(X_normalized, "X_normalized")
+    U_scaled = _check_fields(U_scaled, "U_scaled")
+    if X_normalized.shape != U_scaled.shape:
+        raise ValueError("Input and target fields must have matching shapes.")
+    if X_normalized.shape[1:] != (len(x), len(y)):
+        raise ValueError("Field and coordinate grid sizes must match.")
+
+    if model_key == "deeponet":
+        return make_deeponet_branch(X_normalized), make_deeponet_target(U_scaled)
+    if model_key == "fno":
+        return make_fno_input(X_normalized, x, y), make_fno_target(U_scaled)
+    raise ValueError(f"Unsupported model: {model_key!r}.")

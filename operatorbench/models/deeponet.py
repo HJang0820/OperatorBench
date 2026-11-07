@@ -29,11 +29,17 @@ class DeepONet2d(nn.Module):
         trunk_hidden,
         coords01,
         use_hard_dirichlet=False,
+        branch_activation="tanh",
     ):
         super().__init__()
 
+        activations = {"tanh": nn.Tanh, "gelu": nn.GELU}
+        if branch_activation not in activations:
+            raise ValueError("branch_activation must be tanh or gelu.")
+        self.branch_activation = branch_activation
         self.branch = MLP(
-            n_sensors, branch_hidden, latent_dim, activation=nn.Tanh
+            n_sensors, branch_hidden, latent_dim,
+            activation=activations[branch_activation],
         )
         self.trunk = MLP(
             2, trunk_hidden, latent_dim, activation=nn.Tanh

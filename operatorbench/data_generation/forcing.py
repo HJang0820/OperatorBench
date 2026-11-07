@@ -57,3 +57,48 @@ def sine_source(N, amplitude=1.0):
     )
 
     return amplitude_value.item() * pattern
+
+
+def sample_sine_sources(
+    n_samples, N, seed=None, *, n_modes=4, amplitude=1.0, smoothness=2.0
+):
+    """Sample smooth source fields on an ij-indexed unit-square grid.
+
+    f_i(x,y) = amplitude * sum_pq xi_i,pq * (p^2+q^2)^(-smoothness/2)
+               * sin(pi*p*x) * sin(pi*q*y), with independent xi ~ N(0,1).
+    Returns a float64 array with shape (n_samples, N, N).
+    """
+    for name, value, minimum in (
+        ("n_samples", n_samples, 1), ("N", N, 3), ("n_modes", n_modes, 1)
+    ):
+        if (
+            isinstance(value, (bool, np.bool_))
+            or not isinstance(value, (int, np.integer))
+            or value < minimum
+        ):
+            raise ValueError(f"{name} must be an integer >= {minimum}.")
+
+    if n_modes > N - 2:
+        raise ValueError("n_modes must be <= N - 2 on this grid.")
+
+    parameters = {}
+    for name, value in (("amplitude", amplitude), ("smoothness", smoothness)):
+        value = np.asarray(value, dtype=np.float64)
+        if value.ndim != 0 or not np.isfinite(value).item() or value.item() < 0:
+            raise ValueError(f"{name} must be a finite nonnegative scalar.")
+        parameters[name] = value.item()
+
+    rng = np.random.default_rng(seed)
+    x = np.linspace(0.0, 1.0, N)
+    k = np.arange(1, n_modes + 1, dtype=np.float64)
+    Phi = np.sin(np.pi * x[:, None] * k[None, :])
+    k_squared = k[:, None] ** 2 + k[None, :] ** 2
+    std = k_squared ** (-0.5 * parameters["smoothness"])
+
+    F = np.empty((n_samples, N, N), dtype=np.float64)
+    for i in range(n_samples):
+        xi = rng.standard_normal((n_modes, n_modes))
+        coefficients = parameters["amplitude"] * xi * std
+        F[i] = Phi @ coefficients @ Phi.T
+
+    return F

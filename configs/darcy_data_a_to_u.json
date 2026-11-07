@@ -1,0 +1,30 @@
+{
+  "dataset": "data/darcy/darcy_binary_f1_v1_full_N85_train1000_val200_test200_seeds2022-2024-2025.npz",
+  "task": "a_to_u",
+  "mode": "full",
+  "N": 85,
+  "splits": {
+    "train": {
+      "n_samples": 1000,
+      "seed": 2022
+    },
+    "val": {
+      "n_samples": 200,
+      "seed": 2024
+    },
+    "test": {
+      "n_samples": 200,
+      "seed": 2025
+    }
+  },
+  "coefficient": {
+    "kind": "binary"
+  },
+  "source": {
+    "kind": "constant",
+    "value": 1.0
+  },
+  "reference": {
+    "kind": "five_point_fd"
+  }
+}

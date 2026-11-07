@@ -13,10 +13,12 @@ import torch
 from operatorbench.data.datasets import load_darcy_dataset
 from operatorbench.data.preprocessing import (
     fit_normalization, normalize_coefficient, scale_solution,
+    fit_task_normalization, select_input_field, normalize_input,
 )
 from operatorbench.data.model_inputs import (
     make_deeponet_branch, make_deeponet_target, make_deeponet_coords,
     make_fno_input, make_fno_target,
+    prepare_model_arrays,
 )
 from operatorbench.models.deeponet import DeepONet2d
 from operatorbench.models.fno import FNO2d
@@ -32,22 +34,78 @@ def file_sha256(path):
     return digest.hexdigest()
 
 
-def prepare_split(data, stats, split, model_key, device):
+def prepare_split(data, stats, split, model_key, device, task="a_to_u"):
     # Use the entire split rather than a small prefix of samples.
-    A = normalize_coefficient(data[f"A_{split}"], stats)
+    X_raw = select_input_field(data, task, split)
+    X = (
+        normalize_coefficient(X_raw, stats)
+        if task == "a_to_u" else normalize_input(X_raw, stats)
+    )
     U = scale_solution(data[f"U_{split}"], stats)
 
-    if model_key == "deeponet":
-        inputs = make_deeponet_branch(A)
-        target = make_deeponet_target(U)
-    else:
-        inputs = make_fno_input(A, data["x"], data["y"])
-        target = make_fno_target(U)
+    inputs, target = prepare_model_arrays(X, U, data["x"], data["y"], model_key)
 
     return (
         torch.from_numpy(inputs).to(device),
         torch.from_numpy(target).to(device),
     )
+
+
+def validate_dataset(data, metadata, settings):
+    """Check the declared task, reference method, splits and physical inputs."""
+    task = settings.get("task", "a_to_u")
+    if task not in ("a_to_u", "f_to_u"):
+        raise ValueError(f"Unsupported task: {task!r}.")
+    source = settings.get("source", {"kind": "constant", "value": 1.0})
+    reference = settings.get("reference", {"kind": "five_point_fd"})
+    if reference not in ({"kind": "five_point_fd"}, {"kind": "analytic_sine"}):
+        raise ValueError("Unsupported reference method in the training configuration.")
+    expected_solver = {"method": reference["kind"], "compute_dtype": "float64"}
+    if reference["kind"] == "five_point_fd":
+        expected_solver["face_average"] = "arithmetic"
+    if (metadata.get("mode") not in ("small", "full") or metadata.get("task") != task
+            or metadata.get("N") != settings["N"]
+            or metadata.get("source") != source
+            or metadata.get("solver") != expected_solver
+            or metadata.get("boundary") != "homogeneous_dirichlet"):
+        raise ValueError("Dataset task, grid, source, reference, or boundary does not match the configuration.")
+
+    if task == "a_to_u":
+        expected_coefficient = {
+            "generator": "sample_fno_darcy_coefficients",
+            "n_modes": settings["N"], "values": [3.0, 12.0],
+        }
+        if source.get("kind") != "constant":
+            raise ValueError("The current a_to_u adapter requires a constant source.")
+    else:
+        expected_coefficient = settings.get("coefficient")
+        if (not isinstance(expected_coefficient, dict)
+                or set(expected_coefficient) != {"kind", "value"}
+                or expected_coefficient["kind"] != "constant"):
+            raise ValueError("The current f_to_u adapter requires a positive constant coefficient.")
+        a0 = expected_coefficient["value"]
+        if type(a0) not in (int, float) or not np.isfinite(a0) or a0 <= 0:
+            raise ValueError("The fixed coefficient must be finite and positive.")
+        if source.get("kind") != "random_sine":
+            raise ValueError("Unsupported f_to_u source distribution.")
+    if metadata.get("coefficient") != expected_coefficient:
+        raise ValueError("Dataset coefficient metadata does not match the configuration.")
+
+    for split in ("train", "val", "test"):
+        if data[f"A_{split}"].shape[0] != settings["split_sizes"][split]:
+            raise ValueError(f"The {split} sample count does not match the configuration.")
+        if metadata["splits"][split]["seed"] != settings["split_seeds"][split]:
+            raise ValueError(f"The {split} generation seed does not match the configuration.")
+    # Training consumes only train/validation fields, never test targets.
+    for split in ("train", "val"):
+        if task == "a_to_u":
+            if not np.isin(data[f"A_{split}"], [3.0, 12.0]).all():
+                raise ValueError("The binary-coefficient adapter requires values 3 and 12.")
+            if not np.all(data[f"F_{split}"] == np.float32(source["value"])):
+                raise ValueError("The fixed source does not match the configuration.")
+        elif not np.all(data[f"A_{split}"] == np.float32(expected_coefficient["value"])):
+            raise ValueError("The fixed coefficient does not match the configuration.")
+    return task
 
 
 def main():
@@ -111,32 +169,22 @@ def main():
     ).resolve()
     data, metadata = load_darcy_dataset(dataset_path)
 
-    if (metadata.get("mode") != "full"
-            or metadata.get("task") != "a_to_u"
-            or metadata.get("N") != settings["N"]
-            or metadata.get("source") != {"kind": "constant", "value": 1.0}):
-        raise ValueError("Dataset task, grid, or source metadata does not match the configuration.")
-
-    for split, count in settings["split_sizes"].items():
-        if data[f"A_{split}"].shape[0] != count:
-            raise ValueError(f"The {split} sample count does not match the configuration.")
-        if metadata["splits"][split]["seed"] != settings["split_seeds"][split]:
-            raise ValueError(f"The {split} generation seed does not match the configuration.")
-
-    for split in ("train", "val"):
-        if not np.isin(data[f"A_{split}"], [3.0, 12.0]).all():
-            raise ValueError("This baseline requires coefficient values of 3 and 12 only.")
-        if not np.all(data[f"F_{split}"] == 1.0):
-            raise ValueError("This baseline requires a fixed source term of 1.")
+    task = validate_dataset(data, metadata, settings)
 
     # Fit normalization once using the entire training split only.
-    stats = fit_normalization(data["A_train"], data["U_train"])
-    train_x, train_y = prepare_split(data, stats, "train", args.model, device)
-    val_x, val_y = prepare_split(data, stats, "val", args.model, device)
+    stats = (
+        fit_normalization(data["A_train"], data["U_train"])
+        if task == "a_to_u" else fit_task_normalization(data, task)
+    )
+    train_x, train_y = prepare_split(data, stats, "train", args.model, device, task)
+    val_x, val_y = prepare_split(data, stats, "val", args.model, device, task)
 
     coords01, trunk = make_deeponet_coords(data["x"], data["y"])
-    model_config = settings["models"][args.model]
+    model_config = dict(settings["models"][args.model])
     if args.model == "deeponet":
+        model_config.setdefault("n_sensors", train_x.shape[1])
+        if model_config["n_sensors"] != train_x.shape[1]:
+            raise ValueError("DeepONet n_sensors must match the number of input grid values.")
         model_name = "DeepONet"
         model = DeepONet2d(
             coords01=torch.from_numpy(coords01), **model_config,
@@ -144,6 +192,10 @@ def main():
         shared = (torch.from_numpy(trunk).to(device),)
     else:
         model_name = "FNO"
+        N = settings["N"]
+        if not (1 <= model_config["modes1"] <= N // 2
+                and 1 <= model_config["modes2"] <= N // 2 + 1):
+            raise ValueError("FNO modes must fit the selected grid; reduce the mode counts or increase N.")
         model = FNO2d(**model_config).to(device)
         shared = ()
 
@@ -153,6 +205,8 @@ def main():
     run_info = {
         "purpose": "full_data_smoke_test" if args.smoke else "baseline_training",
         "model_name": model_name,
+        "task": task,
+        "input_field": "A" if task == "a_to_u" else "F",
         "model_config": model_config,
         "model_init_seed": seed,
         "normalization": {key: float(value) for key, value in stats.items()},
@@ -163,7 +217,7 @@ def main():
         "dataset_metadata": metadata,
         "train_indices": list(range(train_x.shape[0])),
         "validation_indices": list(range(val_x.shape[0])),
-        "input_convention": "a_to_u; ij/C-order; DON trunk [-1,1]; FNO xy [0,1]",
+        "input_convention": f"{task}; ij/C-order; DON trunk [-1,1]; FNO xy [0,1]",
         "settings": settings,
         "code_sha256": {
             str(path.relative_to(project_root)): file_sha256(path)
@@ -190,6 +244,8 @@ def main():
     }
 
     print("Model:", model_name, "| Device:", device)
+    print("Task:", task, "| Input field:", run_info["input_field"])
+    print("Reference method:", metadata["solver"]["method"])
     print("Training input and target shapes:", tuple(train_x.shape), tuple(train_y.shape))
     print("Validation input and target shapes:", tuple(val_x.shape), tuple(val_y.shape))
     print("Total optimization steps:", config["num_steps"])
@@ -212,6 +268,8 @@ def main():
     summary = {
         "purpose": run_info["purpose"],
         "model_name": model_name,
+        "task": task,
+        "reference_method": metadata["solver"]["method"],
         "completed_steps": len(history["train"]),
         "completed": history["completed"],
         "resume_count": history["resume_count"],

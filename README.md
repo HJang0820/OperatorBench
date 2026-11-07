@@ -13,33 +13,40 @@ Generate data -> Train -> Predict -> Evaluate -> Visualize
 
 | Stage | Main operation | Output |
 | --- | --- | --- |
-| Generate data | Sample coefficient fields and solve the PDE numerically. | Training, validation, and test datasets |
+| Generate data | Sample the selected input field (`a` or `f`) and solve the PDE numerically. | Training, validation, and test datasets |
 | Train | Fit preprocessing on training data, optimize the model, and select it using validation data. | Model checkpoint and preprocessing statistics |
-| Predict | Apply the trained model to coefficient fields using saved preprocessing. | Predicted solution fields |
+| Predict | Apply the trained model to input fields using saved preprocessing. | Predicted solution fields |
 | Evaluate | Compare predictions with reference solutions. | Per-sample and aggregate errors |
-| Visualize | Plot user-selected samples. | Coefficient, reference, prediction, and error figures |
+| Visualize | Plot user-selected samples. | Input, reference, prediction, and error figures |
 
 The current evaluation command performs prediction, error calculation,
 and visualization together. It evaluates the original held-out test set.
 
 ## Current Darcy benchmark
 
-We learn the coefficient-to-solution map `a -> u`:
+Two tasks share the same Darcy equation and numerical solver:
+
+| Task | Varying input | Fixed field |
+| --- | --- | --- |
+| `a -> u` | Binary coefficient field | `f = 1` |
+| `f -> u` | Gaussian sine-series forcing | `a = 1` |
+
 
 $$
--\nabla \cdot (a(x)\nabla u(x)) = 1,
+-\nabla \cdot (a(x)\nabla u(x)) = f(x),
 \qquad x \in (0,1)^2,
 \qquad u|_{\partial\Omega}=0.
 $$
 
 | Item | Current setting |
 | --- | --- |
-| Coefficient | Binary random fields with values 3 and 12 |
+| Coefficient | Binary values 3 and 12 (`a -> u`), or fixed at 1 (`f -> u`) |
+| Source | Fixed at 1 (`a -> u`), or Gaussian sine series with K=4 (`f -> u`) |
 | Boundary condition | Homogeneous Dirichlet |
 | Grid | 85 x 85 nodes, including boundaries |
 | Reference solver | Flux-form five-point finite differences with arithmetic face averages |
 | Train / validation / test | 1,000 / 200 / 200 samples |
-| Models | Fully connected DeepONet and FNO |
+| Models | Fully-connected DeepONet (Tanh branch for `a -> u`, GELU branch for `f -> u`) and FNO |
 | Training budget | 25,000 optimizer updates per model |
 
 ## Common data interface
@@ -81,10 +88,14 @@ To customize an experiment, copy the baseline JSON file, edit the relevant
 settings, and pass the new file with `--config`. Use a new `--run-name`
 for each new experiment.
 
-The current data-generation command uses settings defined in
-`scripts/generate_darcy_splits.py`. Editing `N`, `split_sizes`, or
-`split_seeds` in the training configuration does not regenerate data.
-Dataset settings and model input dimensions must remain consistent.
+Data-generation settings are defined in `configs/darcy_data_a_to_u.json`
+and `configs/darcy_data_f_to_u.json`. Select one with
+`python -m scripts.generate_darcy_splits --config PATH`.
+Set `N`, `splits`, `coefficient`, and `source` in that file. Use a new dataset
+path when changing settings. Training configurations must match the generated
+grid, split counts, seeds, source, and reference method. Editing a training
+configuration does not regenerate data. DeepONet infers the sensor count from
+the input grid if `n_sensors` is omitted; an explicit value must match it.
 
 Evaluation restores the model configuration and preprocessing statistics
 from the checkpoint; it does not take a training configuration file.
@@ -197,6 +208,23 @@ Results are saved in `outputs/darcy_evaluation_01/`:
 
 Choose a new output directory when repeating an evaluation.
 
+### Source-to-solution example (`f -> u`)
+
+The following commands use the same 1,000/200/200 split sizes and 85 x 85 grid.
+Run training commands sequentially. Replace `--device cpu` with `--device cuda`
+when using a compatible GPU environment.
+
+```bash
+python -m scripts.generate_darcy_splits --config configs/darcy_data_f_to_u.json
+python -u -m scripts.train_darcy --config configs/darcy_f_to_u_deeponet.json --model deeponet --device cpu --run-name f_to_u_deeponet_01
+python -u -m scripts.train_darcy --config configs/darcy_f_to_u_fno.json --model fno --device cpu --run-name f_to_u_fno_01
+python -u -m scripts.evaluate_darcy --device cpu --deeponet-checkpoint outputs/f_to_u_deeponet_01/best.pt --fno-checkpoint outputs/f_to_u_fno_01/best.pt --output-dir outputs/f_to_u_evaluation_01 --sample-indices 0 5 19
+```
+
+See [Darcy source-input configuration](docs/darcy-f-to-u.md) for the source
+distribution, learning rates, checkpoint handling, and quick integration checks.
+Evaluation uses every test sample; figure selection only controls the plots.
+
 ### Evaluate existing checkpoints
 
 If trained checkpoints are already available, skip data generation and
@@ -211,7 +239,7 @@ No pretrained-checkpoint download release is currently provided.
 
 ## Initial results
 
-Both models were trained on CPU and evaluated on the same 200 test samples.
+The `a -> u` models below were trained on CPU and evaluated on the same 200 test samples.
 The reported results use one training initialization seed per model.
 
 | Model | Mean test relative L2 (%) |

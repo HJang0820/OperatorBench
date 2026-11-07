@@ -13,7 +13,9 @@ import numpy as np
 import torch
 
 from operatorbench.data.datasets import load_darcy_dataset
-from operatorbench.data.preprocessing import normalize_coefficient, unscale_solution
+from operatorbench.data.preprocessing import (
+    normalize_coefficient, normalize_input, select_input_field, unscale_solution,
+)
 from operatorbench.data.model_inputs import (
     make_deeponet_branch, make_deeponet_coords, make_fno_input,
 )
@@ -50,7 +52,13 @@ def check_compatibility(saved, data, metadata, dataset_hash, root, model_key):
         raise ValueError("Dataset SHA-256 differs from the training dataset.")
     if info["dataset_metadata"] != metadata:
         raise ValueError("Dataset metadata differs from the training dataset.")
-    if info["input_convention"] != "a_to_u; ij/C-order; DON trunk [-1,1]; FNO xy [0,1]":
+    task = metadata["task"]
+    if info.get("task", "a_to_u") != task:
+        raise ValueError("Checkpoint and dataset tasks differ.")
+    expected_field = "A" if task == "a_to_u" else "F"
+    if info.get("input_field", expected_field) != expected_field:
+        raise ValueError("Checkpoint input field differs from the task.")
+    if info["input_convention"] != f"{task}; ij/C-order; DON trunk [-1,1]; FNO xy [0,1]":
         raise ValueError("Unsupported input convention.")
     for axis in ("x", "y"):
         if not np.array_equal(info[axis].cpu().numpy(), data[axis]):
@@ -59,8 +67,9 @@ def check_compatibility(saved, data, metadata, dataset_hash, root, model_key):
         if len(data[f"A_{split}"]) != info["settings"]["split_sizes"][split]:
             raise ValueError(f"Sample-count mismatch: {split}")
     stats = info["normalization"]
-    if (not np.isfinite([stats[k] for k in ("a_mean", "a_std", "u_scale")]).all()
-            or stats["a_std"] <= 0 or stats["u_scale"] <= 0):
+    mean_key, std_key = ("a_mean", "a_std") if task == "a_to_u" else ("input_mean", "input_std")
+    if (not np.isfinite([stats[k] for k in (mean_key, std_key, "u_scale")]).all()
+            or stats[std_key] <= 0 or stats["u_scale"] <= 0):
         raise ValueError("Invalid saved normalization statistics.")
 
     # Training/resume code may differ between runs; inference code must match.
@@ -81,7 +90,10 @@ def predict_checkpoint(saved, data, model_key, device, batch_size):
     info = saved["run_info"]
     # Reuse the stored training statistics; do not fit anything on the test set.
     stats = {key: np.float32(value) for key, value in info["normalization"].items()}
-    normalized_a = normalize_coefficient(data["A_test"], stats)
+    task = info.get("task", "a_to_u")
+    raw_input = select_input_field(data, task, "test")
+    normalized_a = (normalize_coefficient(raw_input, stats) if task == "a_to_u"
+                    else normalize_input(raw_input, stats))
     coords01, trunk = make_deeponet_coords(data["x"], data["y"])
     if model_key == "deeponet":
         model = DeepONet2d(
@@ -108,7 +120,7 @@ def predict_checkpoint(saved, data, model_key, device, batch_size):
     return unscale_solution(scaled, stats)
 
 
-def save_sample_figure(data, predictions, sample_id, path):
+def save_sample_figure(data, predictions, sample_id, path, task="a_to_u"):
     reference = data["U_test"][sample_id]
     don = predictions["deeponet"][sample_id]
     fno = predictions["fno"][sample_id]
@@ -119,11 +131,16 @@ def save_sample_figure(data, predictions, sample_id, path):
     if upper <= lower:
         upper = lower + 1e-12
     error_upper = max(float(err_don.max()), float(err_fno.max()), 1e-12)
+    field = select_input_field(data, task, "test")[sample_id]
+    field_min, field_max = float(field.min()), float(field.max())
+    if field_max <= field_min:
+        field_max = field_min + max(abs(field_min), 1.0) * 1e-6
+    label = "Coefficient a(x, y)" if task == "a_to_u" else "Source f(x, y)"
     panels = [
-        (reference, "FDM reference", "viridis", lower, upper),
+        (reference, "Reference solution", "viridis", lower, upper),
         (don, "DeepONet prediction", "viridis", lower, upper),
         (fno, "FNO prediction", "viridis", lower, upper),
-        (data["A_test"][sample_id], "Coefficient a(x, y)", "viridis", 3, 12),
+        (field, label, "viridis", field_min, field_max),
         (err_don, "DeepONet absolute error", "magma", 0, error_upper),
         (err_fno, "FNO absolute error", "magma", 0, error_upper),
     ]
@@ -189,14 +206,19 @@ def main():
     dataset_path = (args.dataset or (root / first["settings"]["dataset"])).resolve()
     dataset_hash = file_sha256(dataset_path)
     data, metadata = load_darcy_dataset(dataset_path)
-    if (metadata.get("task") != "a_to_u" or metadata.get("mode") != "full"
-            or metadata.get("source") != {"kind": "constant", "value": 1.0}):
-        raise ValueError("This evaluator supports the full a_to_u, f=1 baseline.")
-    if len(data["U_test"]) != 200:
-        raise ValueError("This baseline comparison expects exactly 200 test samples.")
-    if (not np.isin(data["A_test"], [3, 12]).all()
-            or not np.all(data["F_test"] == 1)):
-        raise ValueError("Unexpected test coefficient or source values.")
+    task = metadata.get("task")
+    if task not in ("a_to_u", "f_to_u"):
+        raise ValueError("Unsupported Darcy task.")
+    if task == "a_to_u":
+        if (not np.isin(data["A_test"], [3, 12]).all()
+                or not np.all(data["F_test"] == np.float32(metadata["source"]["value"]))):
+            raise ValueError("Unexpected test coefficient or fixed source.")
+    else:
+        coefficient = metadata.get("coefficient", {})
+        if (coefficient.get("kind") != "constant"
+                or not np.all(data["A_test"] == np.float32(coefficient["value"]))):
+            raise ValueError("The fixed test coefficient changed.")
+    print("Task:", task, "| Reference:", metadata["solver"]["method"])
     for key, saved in checkpoints.items():
         check_compatibility(saved, data, metadata, dataset_hash, root, key)
     print("Checkpoint and dataset compatibility checks passed.", flush=True)
@@ -228,7 +250,7 @@ def main():
             "best_step": saved["best_step"],
             "validation_relative_l2": saved["best_val_relative_l2"],
             "test_relative_l2_mean": float(relative.mean()),
-            "test_relative_l2_std_across_samples": float(relative.std(ddof=1)),
+            "test_relative_l2_std_across_samples": float(relative.std(ddof=1)) if len(relative) > 1 else 0.0,
             "test_relative_l2_mean_percent": float(100 * relative.mean()),
             "test_max_absolute_error_mean": float(maximum.mean()),
             "test_max_absolute_error_worst": float(maximum.max()),
@@ -268,10 +290,13 @@ def main():
     # Preselect examples by index, not by their prediction errors.
     for sample_id in figure_indices:
         save_sample_figure(data, predictions, sample_id,
-                           args.output_dir / f"sample_{sample_id:03d}.png")
+                           args.output_dir / f"sample_{sample_id:03d}.png", task=task)
     summary = {
         "completed": True, "evaluated_at_utc": datetime.now(timezone.utc).isoformat(),
         "dataset_path": str(dataset_path), "dataset_sha256": dataset_hash,
+        "task": task, "input_field": "A" if task == "a_to_u" else "F",
+        "reference_method": metadata["solver"]["method"],
+        "dataset_metadata": metadata,
         "split": "test", "grid": [len(data["x"]), len(data["y"])],
         "metric_domain": "all grid points, including boundaries; uniform discrete norms",
         "solution_scale": "physical", "relative_l2_denominator_epsilon": 1e-12,

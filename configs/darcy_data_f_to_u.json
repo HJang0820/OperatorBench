@@ -1,0 +1,33 @@
+{
+  "dataset": "data/darcy/darcy_f_to_u_gaussian_sine4_fd_full_N85_train1000_val200_test200_v1.npz",
+  "task": "f_to_u",
+  "mode": "full",
+  "N": 85,
+  "splits": {
+    "train": {
+      "n_samples": 1000,
+      "seed": 2030
+    },
+    "val": {
+      "n_samples": 200,
+      "seed": 2031
+    },
+    "test": {
+      "n_samples": 200,
+      "seed": 2032
+    }
+  },
+  "coefficient": {
+    "kind": "constant",
+    "value": 1.0
+  },
+  "source": {
+    "kind": "random_sine",
+    "n_modes": 4,
+    "amplitude": 1.0,
+    "smoothness": 2.0
+  },
+  "reference": {
+    "kind": "five_point_fd"
+  }
+}

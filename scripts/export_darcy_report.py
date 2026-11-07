@@ -25,9 +25,12 @@ def main():
     rows = summary["metrics"]
     if len(rows) != 2 or {row["model"] for row in rows} != {"DeepONet", "FNO"}:
         raise ValueError("Expected one DeepONet row and one FNO row.")
+    n_test = rows[0]["n_test"]
+    if type(n_test) is not int or n_test < 1:
+        raise ValueError("Expected a positive test sample count.")
     for row in rows:
-        if row["n_test"] != 200:
-            raise ValueError("This report expects 200 test samples per model.")
+        if row["n_test"] != n_test:
+            raise ValueError("The model rows use different test sample counts.")
         for key in ("test_relative_l2_mean_percent", "test_max_absolute_error_mean",
                     "test_max_absolute_error_worst"):
             if not math.isfinite(row[key]) or row[key] < 0:
@@ -55,6 +58,9 @@ def main():
         "figure_sample_indices", "metrics", "evaluation_environment",
         "evaluation_code_sha256",
     )}
+    for key in ("task", "input_field", "reference_method", "dataset_metadata"):
+        if key in summary:
+            public[key] = summary[key]
     public["checkpoints"] = {
         name: {key: info[key] for key in (
             "checkpoint_sha256", "model_config", "normalization", "training_config",
@@ -71,9 +77,11 @@ def main():
             json.dumps(public, indent=2, allow_nan=False) + "\n"
         ).encode("utf-8"),
     }
-    if summary["figure_sample_indices"] != [0, 1, 2]:
-        raise ValueError("Expected preselected figure indices 0, 1 and 2.")
-    for index in (0, 1, 2):
+    indices = summary["figure_sample_indices"]
+    if (not isinstance(indices, list) or len(indices) != len(set(indices))
+            or any(type(i) is not int or not 0 <= i < n_test for i in indices)):
+        raise ValueError("Invalid preselected figure sample indices.")
+    for index in indices:
         name = f"sample_{index:03d}.png"
         contents[root / figure_rel / name] = (source / name).read_bytes()
 
@@ -90,7 +98,7 @@ def main():
     print("Public result files exported. Existing identical files were preserved.")
     print("Copy the Markdown section below into the repository-root README.md.\n")
     print("## Darcy baseline test results\n")
-    print("Both validation-selected checkpoints were evaluated on the same 200 held-out test samples.")
+    print(f"Both validation-selected checkpoints were evaluated on the same {n_test} held-out test samples.")
     print("No training or checkpoint selection was performed using the test set.\n")
     print("| Model | Selected update | Mean test relative L2 (%) | Mean sample maximum absolute error | Worst absolute error |")
     print("| --- | ---: | ---: | ---: | ---: |")
@@ -99,7 +107,7 @@ def main():
               f"{row['test_relative_l2_mean_percent']:.4f} | "
               f"{row['test_max_absolute_error_mean']:.6e} | "
               f"{row['test_max_absolute_error_worst']:.6e} |")
-    print("\nRelative L2 is computed per sample and then averaged over 200 samples.")
+    print(f"\nRelative L2 is computed per sample and then averaged over {n_test} samples.")
     print("Absolute errors are measured after restoring the physical solution scale.")
     print("All grid points, including boundary points, are included. The worst absolute")
     print("error is the maximum over all test samples and grid points.\n")
@@ -107,18 +115,19 @@ def main():
     print(f"- [Per-sample errors]({result_rel.as_posix()}/per_sample.csv)")
     print(f"- [Recorded settings, environments and fingerprints]({result_rel.as_posix()}/metadata.json)")
     print("\n### Prediction examples\n")
-    print("Sample indices 0, 1 and 2 were selected before inspecting prediction errors.")
+    print(f"Preselected figure sample indices: {indices}.")
     print("Within each figure, the reference and predictions share a color scale;")
     print("the two absolute-error panels also share a color scale.\n")
-    print(f"![Darcy test sample 0]({figure_rel.as_posix()}/sample_000.png)\n")
-    print(f"Additional examples: [sample 1]({figure_rel.as_posix()}/sample_001.png),")
-    print(f"[sample 2]({figure_rel.as_posix()}/sample_002.png).\n")
+    for index in indices:
+        print(f"![Darcy test sample {index}]({figure_rel.as_posix()}/sample_{index:03d}.png)\n")
     print("### Interpretation and limitations\n")
-    print("These are results for the initial binary-coefficient, fixed-source Darcy baseline,")
+    if summary.get("task", "a_to_u") == "a_to_u":
+        print("These results describe the binary-coefficient, fixed-source Darcy task,")
+    else:
+        print("These results describe the fixed-coefficient, varying-source Darcy task,")
     print("with one training initialization seed per model. They do not establish universal")
     print("model superiority. Test-sample variability is not variability across training seeds.")
-    print("The targets are finite-difference reference solutions; reference accuracy for")
-    print("discontinuous coefficients and higher-resolution datasets remains to be verified.")
+    print("Reference-solution accuracy must be assessed for the selected task and grid.")
 
 
 if __name__ == "__main__":
