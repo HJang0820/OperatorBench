@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from operatorbench.data.darcy_adapter import validate_darcy_fixed_fields
 from operatorbench.data.datasets import load_darcy_dataset
 from operatorbench.data.preprocessing import (
     normalize_coefficient, normalize_input, select_input_field, unscale_solution,
@@ -207,17 +208,9 @@ def main():
     dataset_hash = file_sha256(dataset_path)
     data, metadata = load_darcy_dataset(dataset_path)
     task = metadata.get("task")
-    if task not in ("a_to_u", "f_to_u"):
-        raise ValueError("Unsupported Darcy task.")
-    if task == "a_to_u":
-        if (not np.isin(data["A_test"], [3, 12]).all()
-                or not np.all(data["F_test"] == np.float32(metadata["source"]["value"]))):
-            raise ValueError("Unexpected test coefficient or fixed source.")
-    else:
-        coefficient = metadata.get("coefficient", {})
-        if (coefficient.get("kind") != "constant"
-                or not np.all(data["A_test"] == np.float32(coefficient["value"]))):
-            raise ValueError("The fixed test coefficient changed.")
+    validate_darcy_fixed_fields(data, metadata, splits=("test",))
+    if task == "a_to_u" and not np.isin(data["A_test"], [3, 12]).all():
+        raise ValueError("Unexpected test coefficient.")
     print("Task:", task, "| Reference:", metadata["solver"]["method"])
     for key, saved in checkpoints.items():
         check_compatibility(saved, data, metadata, dataset_hash, root, key)

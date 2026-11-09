@@ -73,8 +73,10 @@ target_values = train[dataset["task"]["targets"][0]]
 
 Fit normalization on the selected training values only. Model-specific input
 construction remains a separate operation. The current training/evaluation
-commands continue to use the existing Darcy split NPZ; this commit adds the
-common conversion, validation, persistence, and loading interface.
+commands continue to use the existing Darcy split NPZ. They reuse the common
+fixed-field check to compare the stored values with the declared constant,
+using the train/validation splits for training and the test split for evaluation.
+The full common schema is validated when converting or loading a common NPZ.
 
 ## Checks and limits
 

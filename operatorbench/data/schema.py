@@ -23,6 +23,14 @@ def _require(condition, message):
         raise ValueError(message)
 
 
+def validate_fixed_field(values, *, name, expected=None):
+    """Check a fixed field across samples or against its declared value."""
+    if expected is None:
+        _require(np.all(values == values[:1]), f"{name}: declared fixed but varies across samples.")
+    else:
+        _require(np.all(values == expected), f"{name}: fixed field does not match the declared value {expected}.")
+
+
 def validate_operator_dataset(dataset):
     """Reject inconsistent physical fields, task roles, coordinates, and splits."""
     required = {"schema_version", "problem", "sample_ids", "fields", "coordinates",
@@ -90,8 +98,7 @@ def validate_operator_dataset(dataset):
     _require(not any(groups[i] & groups[j] for i in range(3) for j in range(i)),
              "Input, target, and fixed-field roles must be disjoint.")
     for name in task["fixed_fields"]:
-        values = fields[name]["values"]
-        _require(np.all(values == values[:1]), f"{name}: declared fixed but varies across samples.")
+        validate_fixed_field(fields[name]["values"], name=name)
 
     conditions = dataset["conditions"]
     _require(isinstance(conditions, dict) and isinstance(conditions.get("parameters"), dict),

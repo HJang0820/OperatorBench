@@ -174,6 +174,47 @@ class DarcyWorkflowTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"Inference source differs"):
                 evaluate.check_compatibility(saved,data,metadata,train.file_sha256(settings["dataset"]),ROOT,"deeponet")
 
+            self.check_rejects_bad_fixed_fields(task, data, metadata, config, paths)
+            wrong_config = self.work / f"{task}_wrong_grid.json"
+            wrong_config.write_text(json.dumps({**baseline, "N": 19}))
+            with self.assertRaisesRegex(ValueError, "does not match the configuration"):
+                invoke(train, "--config", wrong_config, "--model", "deeponet",
+                       "--device", "cpu", "--run-name", f"workflow_check_{uuid.uuid4().hex}")
+
+            changed_targets = self.work / f"{task}_changed_targets.npz"
+            arrays = {**data, "U_test": data["U_test"].copy()}
+            arrays["U_test"][0, 1, 1] += 1
+            np.savez_compressed(changed_targets, **arrays, metadata_json=json.dumps(metadata))
+            with self.assertRaisesRegex(ValueError, "Dataset SHA-256 differs"):
+                invoke(evaluate, "--device", "cpu", "--dataset", changed_targets,
+                       "--deeponet-checkpoint", paths["deeponet"], "--fno-checkpoint", paths["fno"],
+                       "--output-dir", self.work / f"{task}_rejected")
+
+    def check_rejects_bad_fixed_fields(self, task, data, metadata, config, paths):
+        field = "F" if task == "a_to_u" else "A"
+        for split in ("train", "val", "test"):
+            key = f"{field}_{split}"
+            for uniform in (False, True):
+                with self.subTest(task=task, split=split, uniform=uniform):
+                    arrays = dict(data)
+                    arrays[key] = data[key].copy()
+                    if uniform:
+                        arrays[key] += 1
+                    else:
+                        arrays[key][0, 1, 1] += 1
+                    dataset = self.work / f"{task}_{split}_{uniform}.npz"
+                    np.savez_compressed(dataset, **arrays, metadata_json=json.dumps(metadata))
+                    name = f"workflow_check_{uuid.uuid4().hex}"
+                    self.run_dirs.append(ROOT / "outputs" / name)
+                    with self.assertRaisesRegex(ValueError, rf"{key}: fixed field does not match"):
+                        if split == "test":
+                            invoke(evaluate, "--device", "cpu", "--dataset", dataset,
+                                   "--deeponet-checkpoint", paths["deeponet"], "--fno-checkpoint", paths["fno"],
+                                   "--output-dir", self.work / name)
+                        else:
+                            invoke(train, "--device", "cpu", "--dataset", dataset,
+                                   "--config", config, "--model", "deeponet", "--run-name", name)
+
 
 if __name__=="__main__":
     unittest.main()

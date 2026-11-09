@@ -6,7 +6,28 @@ from pathlib import Path
 
 import numpy as np
 
-from .schema import SCHEMA_VERSION, SPLITS, validate_operator_dataset
+from .schema import SCHEMA_VERSION, SPLITS, validate_fixed_field, validate_operator_dataset
+
+
+_TASK_FIELDS = {"a_to_u": ("a", "f", "source"), "f_to_u": ("f", "a", "coefficient")}
+
+
+def validate_darcy_fixed_fields(data, metadata, *, splits):
+    """Validate the fixed field in raw split arrays, without converting them."""
+    task = metadata.get("task")
+    if task not in _TASK_FIELDS:
+        raise ValueError("Unsupported Darcy task.")
+    _, field, condition_key = _TASK_FIELDS[task]
+    condition = metadata.get(condition_key)
+    if not isinstance(condition, dict) or condition.get("kind") != "constant":
+        raise ValueError(f"{task}: expected a constant {condition_key}.")
+    value = condition.get("value")
+    if type(value) not in (int, float) or not np.isfinite(value) or (field == "a" and value <= 0):
+        raise ValueError(f"{task}: invalid fixed {condition_key} value.")
+    expected = np.float32(value)
+    for split in splits:
+        key = f"{field.upper()}_{split}"
+        validate_fixed_field(data[key], name=key, expected=expected)
 
 
 def from_darcy_arrays(data, metadata, dataset_id):
@@ -14,7 +35,7 @@ def from_darcy_arrays(data, metadata, dataset_id):
     if not isinstance(dataset_id, str) or not dataset_id:
         raise ValueError("Provide an explicit dataset ID.")
     task = metadata.get("task")
-    if task not in {"a_to_u", "f_to_u"}:
+    if task not in _TASK_FIELDS:
         raise ValueError("Darcy adapter supports a_to_u and f_to_u.")
     x = np.asarray(data["x"], dtype=np.float64)
     y = np.asarray(data["y"], dtype=np.float64)
@@ -39,7 +60,7 @@ def from_darcy_arrays(data, metadata, dataset_id):
         fields[name] = {"values": values.reshape(values.shape[0], 1, int(np.prod(grid_shape)), 1),
                         "time": None, "components": [name], "quantity": quantity, "unit": None}
     space = np.stack(np.meshgrid(x, y, indexing="ij"), axis=-1).reshape(-1, 2)
-    inputs, fixed = (["a"], ["f"]) if task == "a_to_u" else (["f"], ["a"])
+    input_field, fixed_field, _ = _TASK_FIELDS[task]
     boundary = metadata.get("boundary")
     if boundary != "homogeneous_dirichlet":
         raise ValueError("This Darcy adapter currently supports zero Dirichlet data only.")
@@ -49,7 +70,7 @@ def from_darcy_arrays(data, metadata, dataset_id):
         "sample_ids": np.concatenate(list(splits.values())),
         "fields": fields,
         "coordinates": {"space": space, "grid_shape": grid_shape, "indexing": "ij", "flatten_order": "C"},
-        "task": {"name": task, "inputs": inputs, "targets": ["u"], "fixed_fields": fixed},
+        "task": {"name": task, "inputs": [input_field], "targets": ["u"], "fixed_fields": [fixed_field]},
         "conditions": {"boundary": {"kind": "dirichlet", "value": 0.0},
                        "initial_fields": [], "parameters": {}},
         "splits": splits,

@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from operatorbench.data.darcy_adapter import validate_darcy_fixed_fields
 from operatorbench.data.datasets import load_darcy_dataset
 from operatorbench.data.preprocessing import (
     fit_normalization, normalize_coefficient, scale_solution,
@@ -97,14 +98,11 @@ def validate_dataset(data, metadata, settings):
         if metadata["splits"][split]["seed"] != settings["split_seeds"][split]:
             raise ValueError(f"The {split} generation seed does not match the configuration.")
     # Training consumes only train/validation fields, never test targets.
-    for split in ("train", "val"):
-        if task == "a_to_u":
+    if task == "a_to_u":
+        for split in ("train", "val"):
             if not np.isin(data[f"A_{split}"], [3.0, 12.0]).all():
                 raise ValueError("The binary-coefficient adapter requires values 3 and 12.")
-            if not np.all(data[f"F_{split}"] == np.float32(source["value"])):
-                raise ValueError("The fixed source does not match the configuration.")
-        elif not np.all(data[f"A_{split}"] == np.float32(expected_coefficient["value"])):
-            raise ValueError("The fixed coefficient does not match the configuration.")
+    validate_darcy_fixed_fields(data, metadata, splits=("train", "val"))
     return task
 
 
